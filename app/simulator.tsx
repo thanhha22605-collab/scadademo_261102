@@ -137,21 +137,31 @@ function Choice({
     </label>
   );
 }
-function MotorTrend() {
+const histMetrics: Record<
+  string,
+  { label: string; cur: string; base: number; amp: number; max: number }
+> = {
+  current: { label: 'Dòng điện Motor nâng (A)', cur: '13.7 A', base: 12, amp: 4, max: 22 },
+  temp: { label: 'Nhiệt độ động cơ (°C)', cur: '78 °C', base: 70, amp: 9, max: 120 },
+  vfd: { label: 'Tần số biến tần VFD (Hz)', cur: '42.5 Hz', base: 40, amp: 7, max: 60 },
+};
+function MotorTrend({ metric = 'current' }: { metric?: string }) {
+  const m = histMetrics[metric] ?? histMetrics.current;
   const pts = Array.from({ length: 60 }, (_, i) => {
-    const base = 12 + Math.sin(i / 3) * 3 + Math.sin(i / 1.7) * 1.5;
-    const spike = i > 40 && i < 44 ? 6 : 0;
+    const base =
+      m.base + Math.sin(i / 3) * (m.amp * 0.6) + Math.sin(i / 1.7) * (m.amp * 0.4);
+    const spike = i > 40 && i < 44 ? m.amp * 1.2 : 0;
     const v = base + spike;
     const x = 20 + i * (720 / 59);
-    const y = 175 - (v / 22) * 150;
+    const y = 175 - (v / m.max) * 150;
     return `${x.toFixed(0)},${y.toFixed(0)}`;
   }).join(' ');
   return (
     <div className="trend">
       <div className="trend-live-top">
-        <span className="muted">Dòng điện Motor nâng (Real-time Trend)</span>
+        <span className="muted">{m.label} (Real-time Trend)</span>
         <span className="trend-live-val">
-          Giá trị hiện tại: <strong>13.7 A</strong>
+          Giá trị hiện tại: <strong>{m.cur}</strong>
         </span>
         <Badge tone="green">Sóng PLC Live</Badge>
       </div>
@@ -246,6 +256,7 @@ export function SimulatorViews({
   const [bypTimeout, setBypTimeout] = useState('15');
   const [bypReason, setBypReason] = useState('');
   const [bypNote, setBypNote] = useState('');
+  const [histMetric, setHistMetric] = useState('current');
   const b = sim.blocks.find((x) => x.id === selected) ?? sim.blocks[0];
   const job = sim.jobs.find((j) => j.block === b.id && active(j));
   const pick = (id: string) => {
@@ -1361,11 +1372,21 @@ export function SimulatorViews({
         }
       >
         <div className="hist-metrics">
-          <Badge tone="blue">Dòng điện Motor nâng (A)</Badge>
-          <span className="muted">Nhiệt độ động cơ (°C)</span>
-          <span className="muted">Tần số biến tần VFD (Hz)</span>
+          {[
+            { k: 'current', label: 'Dòng điện Motor nâng (A)' },
+            { k: 'temp', label: 'Nhiệt độ động cơ (°C)' },
+            { k: 'vfd', label: 'Tần số biến tần VFD (Hz)' },
+          ].map((m) => (
+            <button
+              key={m.k}
+              className={'metric-pill ' + (histMetric === m.k ? 'active' : '')}
+              onClick={() => setHistMetric(m.k)}
+            >
+              {m.label}
+            </button>
+          ))}
         </div>
-        <MotorTrend />
+        <MotorTrend metric={histMetric} />
       </Box>
       <Box
         title="Nhật ký vận hành"

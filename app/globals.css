@@ -2151,3 +2151,124 @@ h1 {
   color: #8296b1;
   line-height: 1.6;
 }
+
+/* ===================== v2.4 completeness pass ===================== */
+.alarms-live-cats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.alive-cat {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #0e192a;
+  border: 1px solid #26374d;
+  border-left: 3px solid #3a4c63;
+  border-radius: 7px;
+  padding: 13px 15px;
+}
+.alive-cat span {
+  display: block;
+  font-size: 13px;
+  color: #cddcf0;
+}
+.alive-cat small {
+  display: block;
+  font-size: 11px;
+  color: #7d92ae;
+  margin-top: 3px;
+}
+.alive-cat strong {
+  font-size: 26px;
+  font-weight: 600;
+}
+.alive-cat.amber {
+  border-left-color: #f1bc5b;
+}
+.alive-cat.amber strong {
+  color: #f4c874;
+}
+.alive-cat.red {
+  border-left-color: #ff8996;
+}
+.alive-cat.red strong {
+  color: #ff9ba6;
+}
+.alive-cat.blue {
+  border-left-color: #4095ff;
+}
+.alive-cat.blue strong {
+  color: #8cc0ff;
+}
+.floor-svg-wrap {
+  overflow-x: auto;
+  border: 1px solid #23394f;
+  border-radius: 8px;
+  background: #081120;
+  margin-bottom: 14px;
+}
+.floor-svg-wrap svg {
+  display: block;
+  width: 100%;
+  min-width: 720px;
+  height: auto;
+}
+.led-board {
+  background: #060d18;
+  border: 1px solid #21455a;
+  border-radius: 7px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+.led-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 0;
+}
+.led-line + .led-line {
+  border-top: 1px solid #12283a;
+}
+.led-line span {
+  font-size: 12px;
+  color: #7d92ae;
+}
+.led-text {
+  font-family: monospace;
+  font-size: 13px;
+  color: #ffcf6b;
+  text-shadow: 0 0 8px #ffcf6b55;
+  letter-spacing: 0.5px;
+}
+.metric-pill {
+  border: 1px solid #2b3f5a;
+  background: #0e192a;
+  color: #8fa3c0;
+  border-radius: 20px;
+  padding: 6px 13px;
+  font-size: 12px;
+}
+.metric-pill.active {
+  border-color: #4095ff;
+  background: #15375d;
+  color: #8cc0ff;
+}
+.tree-btn {
+  background: transparent;
+  text-align: left;
+  width: 100%;
+  border: 0;
+  font: inherit;
+  border-radius: 5px;
+}
+.tree-btn:hover {
+  background: #12233a;
+  filter: none;
+}
+.tree-node.sel {
+  background: #15375d;
+  color: #8cc0ff;
+}

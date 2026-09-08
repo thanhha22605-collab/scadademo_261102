@@ -61,15 +61,76 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
   );
 }
 
-/* ============ FLOOR PLAN ============ */
-const floorZones = [
-  { z: 1, suv: '05/16', sedan: '06/18', occ: 23, cap: 34 },
-  { z: 2, suv: '07/16', sedan: '11/22', occ: 20, cap: 38 },
-  { z: 3, suv: '12/16', sedan: '18/24', occ: 10, cap: 40 },
-  { z: 4, suv: '14/18', sedan: '20/26', occ: 10, cap: 44 },
-  { z: 5, suv: '06/12', sedan: '09/18', occ: 15, cap: 30 },
-  { z: 6, suv: '04/15', sedan: '06/20', occ: 10, cap: 35 },
+/* ============ FLOOR PLAN (CAD blueprint) ============ */
+type FZone = {
+  z: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  cols: number;
+  occ: number;
+  cap: number;
+  suv: string;
+  sedan: string;
+};
+const facility: FZone[] = [
+  { z: 2, x: 545, y: 55, w: 395, h: 120, cols: 19, occ: 20, cap: 38, suv: '07/16', sedan: '11/22' },
+  { z: 3, x: 55, y: 150, w: 250, h: 205, cols: 10, occ: 10, cap: 40, suv: '12/16', sedan: '18/24' },
+  { z: 4, x: 340, y: 205, w: 300, h: 265, cols: 11, occ: 10, cap: 44, suv: '14/18', sedan: '20/26' },
+  { z: 5, x: 675, y: 205, w: 265, h: 150, cols: 10, occ: 15, cap: 30, suv: '06/12', sedan: '09/18' },
+  { z: 1, x: 55, y: 385, w: 250, h: 185, cols: 10, occ: 23, cap: 34, suv: '05/16', sedan: '06/18' },
+  { z: 6, x: 675, y: 385, w: 265, h: 185, cols: 10, occ: 10, cap: 35, suv: '04/15', sedan: '06/20' },
 ];
+function FloorZoneSvg({ zn }: { zn: FZone }) {
+  const pct = Math.round((zn.occ / zn.cap) * 100);
+  const rows = Math.ceil(zn.cap / zn.cols);
+  const cs = Math.max(
+    6,
+    Math.min((zn.w - 20) / zn.cols, (zn.h - 74) / rows) - 3,
+  );
+  const gx = zn.x + (zn.w - (cs + 3) * zn.cols) / 2;
+  const gy = zn.y + 40;
+  return (
+    <g>
+      <rect
+        x={zn.x}
+        y={zn.y}
+        width={zn.w}
+        height={zn.h}
+        rx="7"
+        fill="#0e1c2e"
+        stroke="#2f5580"
+        strokeDasharray="5 4"
+      />
+      <text x={zn.x + 14} y={zn.y + 26} fill="#cddcf0" fontSize="17" fontWeight="700">
+        ZONE {zn.z}
+      </text>
+      <text x={zn.x + zn.w - 14} y={zn.y + 26} fill="#7fb0e6" fontSize="14" textAnchor="end">
+        {pct}%
+      </text>
+      {Array.from({ length: zn.cap }, (_, k) => {
+        const col = k % zn.cols;
+        const row = Math.floor(k / zn.cols);
+        return (
+          <rect
+            key={k}
+            x={gx + col * (cs + 3)}
+            y={gy + row * (cs + 3)}
+            width={cs}
+            height={cs}
+            rx="1.5"
+            fill={k < zn.occ ? '#1c6b56' : '#16283c'}
+            stroke={k < zn.occ ? '#2f9d7d' : '#24405b'}
+          />
+        );
+      })}
+      <text x={zn.x + 14} y={zn.y + zn.h - 14} fill="#8ca1bd" fontSize="12">
+        SUV {zn.suv} · Sedan {zn.sedan} · Mật độ {zn.occ}/{zn.cap}
+      </text>
+    </g>
+  );
+}
 function FloorPlan() {
   return (
     <>
@@ -102,31 +163,36 @@ function FloorPlan() {
           Trạng thái kết nối ZCU/PGS: <Badge tone="green">ONLINE</Badge>
         </span>
       </div>
-      <div className="floor-map">
-        {floorZones.map((zn) => {
-          const pct = Math.round((zn.occ / zn.cap) * 100);
-          return (
-            <div className="floor-zone" key={zn.z}>
-              <div className="floor-zone-head">
-                <b>ZONE {zn.z}</b>
-                <span className="muted">{pct}%</span>
-              </div>
-              <div className="floor-cells">
-                {Array.from({ length: zn.cap }, (_, i) => (
-                  <i key={i} className={i < zn.occ ? 'on' : ''} />
-                ))}
-              </div>
-              <div className="floor-zone-info">
-                <span>SUV: {zn.suv}</span>
-                <span>Sedan: {zn.sedan}</span>
-                <span>
-                  Mật độ: {zn.occ}/{zn.cap}
-                </span>
-              </div>
-              <Bar value={pct} />
-            </div>
-          );
-        })}
+      <div className="floor-svg-wrap">
+        <svg viewBox="0 0 1000 620" role="img" aria-label="Sơ đồ mặt bằng SCADA 6 phân khu">
+          <defs>
+            <pattern id="fgrid" width="26" height="26" patternUnits="userSpaceOnUse">
+              <path d="M26 0 L0 0 0 26" fill="none" stroke="#16273a" strokeWidth="1" />
+            </pattern>
+          </defs>
+          <path
+            d="M40 60 L720 30 L965 150 L965 585 L120 590 L35 380 Z"
+            fill="#0a1524"
+            stroke="#37546f"
+            strokeWidth="2"
+          />
+          <path
+            d="M40 60 L720 30 L965 150 L965 585 L120 590 L35 380 Z"
+            fill="url(#fgrid)"
+            opacity="0.6"
+          />
+          <text x="330" y="200" fill="#3f5f7d" fontSize="13" letterSpacing="3">
+            SORA GARDENS II — TOTAL PARKING
+          </text>
+          {/* lối lưu thông trung tâm */}
+          <line x1="320" y1="470" x2="660" y2="470" stroke="#2a405a" strokeWidth="14" strokeDasharray="10 8" />
+          <text x="330" y="497" fill="#5c7796" fontSize="12">
+            ← LÀN LƯU THÔNG · VÀO / RA →
+          </text>
+          {facility.map((zn) => (
+            <FloorZoneSvg key={zn.z} zn={zn} />
+          ))}
+        </svg>
       </div>
       <div className="chart-legend">
         <span>
@@ -137,7 +203,7 @@ function FloorPlan() {
           <i className="blue-dot" />
           Vị trí trống
         </span>
-        <span className="muted">Sơ đồ mô phỏng · Puzzle Parking</span>
+        <span className="muted">Sơ đồ mô phỏng · Puzzle Parking System</span>
       </div>
     </>
   );
@@ -245,6 +311,25 @@ function Routing() {
   "recommended_zone": "Zone B", "status": "Allowed" }`}
               </pre>
             </div>
+          </Panel>
+          <Panel title="Màn hình 55'' & Bảng LED chỉ dẫn" pad>
+            <div className="led-board">
+              <div className="led-line">
+                <span>LED Matrix ngoài trời</span>
+                <b className="led-text">SUV 38 · SEDAN 55 · THƯỜNG 24</b>
+              </div>
+              <div className="led-line">
+                <span>LED chỉ dẫn hầm</span>
+                <b className="led-text">
+                  ZONE B ← 18 &nbsp; | &nbsp; ZONE C ↑ 30
+                </b>
+              </div>
+            </div>
+            <Rows>
+              <Row k="Màn hình 55'' trạm phân loại" v="Hoạt động · Hiển thị chỉ đường" />
+              <Row k="Loại thẻ đề xuất" v="Thẻ Sedan (Xanh lá)" />
+              <Row k="Vị trí khuyên dùng" v="Zone B · Block B-01" />
+            </Rows>
           </Panel>
         </div>
         <div className="stack">
@@ -435,7 +520,100 @@ function Maintenance() {
 }
 
 /* ============ ASSET TREE ============ */
+const assetDevices: Record<
+  string,
+  {
+    icon: string;
+    name: string;
+    code: string;
+    tone: string;
+    state: string;
+    m: [string, string, string?][];
+    specs: [string, string][];
+    maint: [string, string][];
+  }
+> = {
+  motor: {
+    icon: '⚙',
+    name: 'Động cơ Nâng hạ (Block B-04)',
+    code: 'MTR-LIFT-B4',
+    tone: 'red',
+    state: 'Lỗi',
+    m: [
+      ['Runtime tích lũy', '1,240 giờ'],
+      ['Số chu kỳ đỗ xe', '45,120 lần'],
+      ['Nhiệt độ cuộn dây', '115°C', 'warn'],
+    ],
+    specs: [
+      ['Hãng sản xuất', 'Mitsubishi Electric'],
+      ['Model động cơ', 'SF-JR 7.5kW 4P'],
+      ['Số serial', 'S/N: 2026-MTR-881A'],
+      ['Ngày lắp đặt', '12/03/2026'],
+    ],
+    maint: [
+      ['Bảo trì gần nhất', '15/06/2026'],
+      ['Dự kiến tiếp theo', '15/07/2026'],
+      ['Vật tư đi kèm', 'Cuộn hút phanh, bôi trơn xích nâng'],
+    ],
+  },
+  vfd: {
+    icon: '🔌',
+    name: 'Biến tần VFD Nâng (Block B-04)',
+    code: 'VFD-LIFT-B4',
+    tone: 'amber',
+    state: 'STOP',
+    m: [
+      ['Runtime tích lũy', '1,180 giờ'],
+      ['Tần số hiện tại', '0.0 Hz'],
+      ['Nhiệt độ tản nhiệt', '54°C'],
+    ],
+    specs: [
+      ['Hãng sản xuất', 'Schneider Electric'],
+      ['Model', 'ATV320 7.5kW'],
+      ['Số serial', 'S/N: 2026-VFD-114C'],
+      ['Ngày lắp đặt', '12/03/2026'],
+    ],
+    maint: [
+      ['Bảo trì gần nhất', '10/06/2026'],
+      ['Dự kiến tiếp theo', '10/09/2026'],
+      ['Vật tư đi kèm', 'Quạt tản nhiệt, tụ DC-bus'],
+    ],
+  },
+  sensor: {
+    icon: '📡',
+    name: 'Cảm biến hành trình LS-T3',
+    code: 'SEN-LS-T3',
+    tone: 'green',
+    state: 'OK',
+    m: [
+      ['Runtime tích lũy', '2,050 giờ'],
+      ['Số lần kích hoạt', '128,400 lần'],
+      ['Điện áp tín hiệu', '24 VDC'],
+    ],
+    specs: [
+      ['Hãng sản xuất', 'Omron'],
+      ['Model', 'D4N-4132'],
+      ['Số serial', 'S/N: 2026-SEN-773A'],
+      ['Ngày lắp đặt', '12/03/2026'],
+    ],
+    maint: [
+      ['Bảo trì gần nhất', '01/06/2026'],
+      ['Dự kiến tiếp theo', '01/12/2026'],
+      ['Vật tư đi kèm', 'Con lăn cữ, gioăng chống bụi'],
+    ],
+  },
+};
 function Assets() {
+  const [sel, setSel] = useState('motor');
+  const d = assetDevices[sel];
+  const leaf = (key: string, label: string, tone: string, st: string) => (
+    <button
+      className={'tree-node l3 tree-btn ' + (sel === key ? 'sel ' : '') + (tone === 'red' ? 'fault' : '')}
+      onClick={() => setSel(key)}
+    >
+      {assetDevices[key].icon} {label} <Badge tone={tone}>{st}</Badge>
+    </button>
+  );
   return (
     <div className="two-col">
       <Panel title="Cấu trúc phân cấp thiết bị" pad>
@@ -444,50 +622,40 @@ function Assets() {
           <div className="tree-node l1">▸ Zone A (Hầm B1)</div>
           <div className="tree-node l2">▸ Block A-01</div>
           <div className="tree-node l2 open">▾ Block B-04</div>
-          <div className="tree-node l3 fault">
-            ⚙ Motor Nâng Hạ <Badge tone="red">LỖI</Badge>
-          </div>
-          <div className="tree-node l3">
-            🔌 Biến tần VFD Nâng <Badge tone="amber">STOP</Badge>
-          </div>
-          <div className="tree-node l3">
-            📡 Cảm biến hành trình LS-T3 <Badge tone="green">OK</Badge>
-          </div>
+          {leaf('motor', 'Motor Nâng Hạ', 'red', 'LỖI')}
+          {leaf('vfd', 'Biến tần VFD Nâng', 'amber', 'STOP')}
+          {leaf('sensor', 'Cảm biến hành trình LS-T3', 'green', 'OK')}
           <div className="tree-node l1">▸ Zone B (Hầm B2)</div>
           <div className="tree-node l1">▸ Zone C (Hầm B3)</div>
         </div>
       </Panel>
       <Panel
-        title="Động cơ Nâng hạ (Block B-04)"
-        aside={<Badge tone="red">Trạng thái: Lỗi</Badge>}
+        title={d.name}
+        aside={<Badge tone={d.tone}>Trạng thái: {d.state}</Badge>}
         pad
       >
         <div className="asset-metrics">
-          <div>
-            <small>RUNTIME TÍCH LŨY</small>
-            <b>1,240 giờ</b>
-          </div>
-          <div>
-            <small>SỐ CHU KỲ ĐỖ XE</small>
-            <b>45,120 lần</b>
-          </div>
-          <div className="warn">
-            <small>NHIỆT ĐỘ CUỘN DÂY</small>
-            <b>115°C</b>
-          </div>
+          {d.m.map((x) => (
+            <div key={x[0]} className={x[2] === 'warn' ? 'warn' : ''}>
+              <small>{x[0].toUpperCase()}</small>
+              <b>{x[1]}</b>
+            </div>
+          ))}
         </div>
+        <Rows>
+          <Row k="Mã thiết bị" v={d.code} />
+        </Rows>
         <h4 className="sub-head">Thông số kỹ thuật</h4>
         <Rows>
-          <Row k="Hãng sản xuất" v="Mitsubishi Electric" />
-          <Row k="Model động cơ" v="SF-JR 7.5kW 4P" />
-          <Row k="Số serial" v="S/N: 2026-MTR-881A" />
-          <Row k="Ngày lắp đặt" v="12/03/2026" />
+          {d.specs.map((s) => (
+            <Row key={s[0]} k={s[0]} v={s[1]} />
+          ))}
         </Rows>
         <h4 className="sub-head">Lịch trình bảo dưỡng</h4>
         <Rows>
-          <Row k="Bảo trì gần nhất" v="15/06/2026" />
-          <Row k="Dự kiến bảo trì tiếp theo" v="15/07/2026" />
-          <Row k="Vật tư thay thế đi kèm" v="Cuộn hút phanh, bôi trơn xích nâng" />
+          {d.maint.map((s) => (
+            <Row key={s[0]} k={s[0]} v={s[1]} />
+          ))}
         </Rows>
       </Panel>
     </div>
@@ -732,22 +900,70 @@ function Reports() {
 }
 
 /* ============ RFID CARDS ============ */
-const cards = [
-  ['TH-00123', '51G-12345', 'Nguyễn Văn An', 'SUV', 'Zone 1', 'Block A-01', 'Hoạt động', true, '08:30:00'],
-  ['TH-00456', '30H-88877', 'Trần Thị Bình', 'Sedan', 'Zone 2', 'Block B-02', 'Hoạt động', true, '07:45:20'],
-  ['TH-00789', '43A-56789', 'Lê Quốc Cường', 'SUV', 'Zone 1', 'Block A-02', 'Hoạt động', true, '06:55:10'],
-  ['TH-01011', '92B-11223', 'Phạm Minh Dũng', 'Sedan', 'Zone 4', 'Block C-02', 'Đã khóa', false, '2026-05-30'],
-  ['TH-01213', '79C-44556', 'Hoàng Thị Lan', 'SUV', 'Zone 2', 'Block B-01', 'Hoạt động', true, '2026-06-07'],
+type CardRow = {
+  id: string;
+  plate: string;
+  owner: string;
+  type: string;
+  zone: string;
+  block: string;
+  active: boolean;
+  synced: boolean;
+  last: string;
+};
+const seedCards: CardRow[] = [
+  { id: 'TH-00123', plate: '51G-12345', owner: 'Nguyễn Văn An', type: 'SUV', zone: 'Zone 1', block: 'A-01', active: true, synced: true, last: '08:30:00' },
+  { id: 'TH-00456', plate: '30H-88877', owner: 'Trần Thị Bình', type: 'Sedan', zone: 'Zone 2', block: 'B-02', active: true, synced: true, last: '07:45:20' },
+  { id: 'TH-00789', plate: '43A-56789', owner: 'Lê Quốc Cường', type: 'SUV', zone: 'Zone 1', block: 'A-02', active: true, synced: true, last: '06:55:10' },
+  { id: 'TH-01011', plate: '92B-11223', owner: 'Phạm Minh Dũng', type: 'Sedan', zone: 'Zone 4', block: 'C-02', active: false, synced: false, last: '2026-05-30' },
+  { id: 'TH-01213', plate: '79C-44556', owner: 'Hoàng Thị Lan', type: 'SUV', zone: 'Zone 2', block: 'B-01', active: true, synced: true, last: '2026-06-07' },
 ];
+// giữ để báo cáo lịch sử thẻ dùng chung
+const cards = seedCards.map(
+  (c) => [c.id, c.plate, c.owner, c.type, c.zone, 'Block ' + c.block, c.active ? 'Hoạt động' : 'Đã khóa', c.synced, c.last] as const,
+);
 function Cards() {
+  const [rows, setRows] = useState<CardRow[]>(seedCards);
+  const [note, setNote] = useState('');
+  const addCard = () => {
+    const id = 'TH-0' + (rows.length + 14).toString().padStart(3, '0');
+    setRows([
+      {
+        id,
+        plate: '30K-' + (100 + rows.length).toString() + '.45',
+        owner: 'Khách vãng lai',
+        type: rows.length % 2 ? 'Sedan' : 'SUV',
+        zone: 'Zone 1',
+        block: 'A-01',
+        active: true,
+        synced: false,
+        last: new Date().toLocaleTimeString('vi-VN'),
+      },
+      ...rows,
+    ]);
+    setNote('Đã tạo thẻ mới, chờ đồng bộ xuống HMI.');
+  };
   return (
     <>
       <div className="metrics metrics-3">
-        <Kpi label="Tổng số thẻ đang quản lý" value="5" tone="blue" icon={CreditCard} />
-        <Kpi label="Thẻ đang hoạt động" value="4" tone="green" icon={CreditCard} />
-        <Kpi label="Thẻ bị khóa / hết hạn" value="1" tone="red" icon={Lock} />
+        <Kpi label="Tổng số thẻ đang quản lý" value={String(rows.length)} tone="blue" icon={CreditCard} />
+        <Kpi label="Thẻ đang hoạt động" value={String(rows.filter((c) => c.active).length)} tone="green" icon={CreditCard} />
+        <Kpi label="Thẻ bị khóa / hết hạn" value={String(rows.filter((c) => !c.active).length)} tone="red" icon={Lock} />
       </div>
-      <Panel title="Danh sách thẻ từ bãi đỗ (RFID Card Management)" pad>
+      <Panel
+        title="Danh sách thẻ từ bãi đỗ (RFID Card Management)"
+        aside={
+          <button className="secondary" onClick={addCard}>
+            <CreditCard size={15} /> Cài đặt thẻ mới
+          </button>
+        }
+        pad
+      >
+        {note && (
+          <div className="notice green" role="status">
+            {note}
+          </div>
+        )}
         <div className="table-scroll">
           <table className="grid-table">
             <thead>
@@ -761,31 +977,68 @@ function Cards() {
                 <th>Trạng thái</th>
                 <th>Đồng bộ HMI</th>
                 <th>Dùng cuối</th>
+                <th>Thao tác</th>
               </tr>
             </thead>
             <tbody>
-              {cards.map((c) => (
-                <tr key={c[0] as string}>
-                  <td className="mono">{c[0]}</td>
-                  <td className="mono">{c[1]}</td>
-                  <td>{c[2]}</td>
-                  <td>{c[3]}</td>
-                  <td>{c[4]}</td>
-                  <td>{c[5]}</td>
+              {rows.map((c) => (
+                <tr key={c.id}>
+                  <td className="mono">{c.id}</td>
+                  <td className="mono">{c.plate}</td>
+                  <td>{c.owner}</td>
+                  <td>{c.type}</td>
+                  <td>{c.zone}</td>
+                  <td>Block {c.block}</td>
                   <td>
-                    <Tag text={c[6] === 'Hoạt động' ? 'Bình thường' : 'Bảo trì'} />
-                  </td>
-                  <td>
-                    <Badge tone={c[7] ? 'green' : 'amber'}>
-                      {c[7] ? 'Đã đồng bộ' : 'Chưa đồng bộ'}
+                    <Badge tone={c.active ? 'green' : 'red'}>
+                      {c.active ? 'Hoạt động' : 'Đã khóa'}
                     </Badge>
                   </td>
-                  <td>{c[8]}</td>
+                  <td>
+                    <Badge tone={c.synced ? 'green' : 'amber'}>
+                      {c.synced ? 'Đã đồng bộ' : 'Chưa đồng bộ'}
+                    </Badge>
+                  </td>
+                  <td>{c.last}</td>
+                  <td>
+                    <div className="row-actions">
+                      <button
+                        className="mini"
+                        aria-label={c.active ? 'Khóa thẻ' : 'Mở khóa thẻ'}
+                        onClick={() => {
+                          setRows(
+                            rows.map((r) =>
+                              r.id === c.id ? { ...r, active: !r.active } : r,
+                            ),
+                          );
+                          setNote(
+                            (c.active ? 'Đã khóa thẻ ' : 'Đã mở khóa thẻ ') +
+                              c.id,
+                          );
+                        }}
+                      >
+                        <Lock size={13} /> {c.active ? 'Khóa' : 'Mở khóa'}
+                      </button>
+                      <button
+                        className="mini danger"
+                        aria-label="Xóa thẻ"
+                        onClick={() => {
+                          setRows(rows.filter((r) => r.id !== c.id));
+                          setNote('Đã xóa thẻ ' + c.id);
+                        }}
+                      >
+                        Xóa
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+        {!rows.length && (
+          <div className="empty-state">Chưa có thẻ nào trong hệ thống.</div>
+        )}
       </Panel>
     </>
   );

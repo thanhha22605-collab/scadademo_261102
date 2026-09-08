@@ -299,6 +299,107 @@ const connectivity = [
   { name: 'LED / PGS', ok: true },
   { name: 'SCADA Server', ok: true },
 ];
+const alarmCatName: Record<string, string> = {
+  operator: 'Lỗi thao tác',
+  system: 'Lỗi thiết bị',
+  maintenance: 'Đến hạn bảo trì',
+};
+function ScadaAlarmsLive({
+  sim,
+  dispatch,
+}: {
+  sim: ReturnType<typeof useSimulation>['sim'];
+  dispatch: ReturnType<typeof useSimulation>['dispatch'];
+}) {
+  const active = sim.alarms.filter((a) => !a.ack);
+  const cnt = (c: string) => active.filter((a) => a.cat === c).length;
+  return (
+    <Panel
+      title="Hệ thống cảnh báo thời gian thực (SCADA Alarms Live)"
+      aside={<span className="muted">Chu kỳ cập nhật: 15s</span>}
+    >
+      <div className="alarms-live-cats">
+        <div className="alive-cat amber">
+          <div>
+            <span>Lỗi thao tác vận hành</span>
+            <small>Operator Errors</small>
+          </div>
+          <strong>{cnt('operator')}</strong>
+        </div>
+        <div className="alive-cat red">
+          <div>
+            <span>Lỗi hệ thống / thiết bị</span>
+            <small>System &amp; Device Faults</small>
+          </div>
+          <strong>{cnt('system')}</strong>
+        </div>
+        <div className="alive-cat blue">
+          <div>
+            <span>Thiết bị đến hạn bảo trì</span>
+            <small>Maintenance Due</small>
+          </div>
+          <strong>{cnt('maintenance')}</strong>
+        </div>
+      </div>
+      <div className="table-scroll">
+        <table className="grid-table">
+          <thead>
+            <tr>
+              <th>Thời gian</th>
+              <th>Mã lỗi</th>
+              <th>Phân loại cảnh báo</th>
+              <th>Nguồn phát</th>
+              <th>Nội dung chi tiết</th>
+              <th>Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {active.slice(0, 6).map((a) => (
+              <tr key={a.id}>
+                <td className="mono">{a.at ?? '—'}</td>
+                <td className="mono">{a.code ?? '—'}</td>
+                <td>
+                  <Badge
+                    tone={
+                      a.cat === 'system'
+                        ? 'red'
+                        : a.cat === 'operator'
+                          ? 'amber'
+                          : 'blue'
+                    }
+                  >
+                    {a.cat ? alarmCatName[a.cat] : '—'}
+                  </Badge>
+                </td>
+                <td>
+                  {zoneTag[a.block[0]]} · Block {a.block} · {a.device ?? '—'}
+                </td>
+                <td>{a.text}</td>
+                <td>
+                  <button
+                    className="secondary"
+                    onClick={() =>
+                      dispatch({
+                        type: 'ack',
+                        id: a.id,
+                        time: new Date().toLocaleString('vi-VN'),
+                      })
+                    }
+                  >
+                    Xác nhận
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!active.length && (
+        <div className="empty-state">Không có cảnh báo đang hoạt động.</div>
+      )}
+    </Panel>
+  );
+}
 export default function Home() {
   const [page, setPage] = useState('overview');
   const [now, setNow] = useState('—');
@@ -661,6 +762,7 @@ export default function Home() {
                   ))}
                 </div>
               </Panel>
+              <ScadaAlarmsLive sim={sim} dispatch={dispatch} />
             </>
           ) : (
             <SimulatorViews
