@@ -310,8 +310,62 @@ const workOrders = [
   ['A', 'Block A-02', 'Cảm biến kích thước', '2,910', '5,000', '980/2000', '2026-07-20', 'Thấp', 'green'],
 ];
 function Maintenance() {
+  const [tab, setTab] = useState('overview');
   return (
     <>
+      <div className="occ-tabs">
+        <button
+          className={tab === 'overview' ? 'active' : ''}
+          onClick={() => setTab('overview')}
+        >
+          Tổng quan & lịch bảo trì
+        </button>
+        <button
+          className={tab === 'remote' ? 'active' : ''}
+          onClick={() => setTab('remote')}
+        >
+          Chẩn đoán lỗi từ xa (Remote Diagnostics)
+        </button>
+      </div>
+      {tab === 'remote' ? (
+        <>
+          <div className="metrics metrics-4">
+            <Kpi label="Độ sẵn sàng (Availability)" value="99.85%" sub="Chuẩn OEE công nghiệp" tone="green" icon={Gauge} />
+            <Kpi label="Chỉ số MTBF" value="364 giờ" sub="Trung bình giữa 2 sự cố" tone="blue" icon={Timer} />
+            <Kpi label="Chỉ số MTTR" value="18.5 phút" sub="Thời gian phục hồi trung bình" tone="purple" icon={RefreshCw} />
+            <Kpi label="Sự cố hoạt động" value="1" sub="Chờ xử lý khẩn cấp" tone="red" icon={Activity} />
+          </div>
+          <Panel title="Nhật ký sự cố thiết bị & Nguyên nhân gốc (Fault History Log)" pad>
+            <div className="table-scroll">
+              <table className="grid-table">
+                <thead>
+                  <tr>
+                    <th>Thời gian</th>
+                    <th>Thiết bị</th>
+                    <th>Mã lỗi</th>
+                    <th>Nguyên nhân gốc</th>
+                    <th>Hành động khắc phục</th>
+                    <th>Người ACK/Reset</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {faultLog.map((r, i) => (
+                    <tr key={i}>
+                      <td className="mono">{r[0]}</td>
+                      <td>{r[1]}</td>
+                      <td className="mono">{r[2]}</td>
+                      <td>{r[3]}</td>
+                      <td>{r[4]}</td>
+                      <td>{r[5]}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        </>
+      ) : (
+        <>
       <div className="metrics metrics-4">
         <Kpi label="Khẩn cấp" value="1" sub="thiết bị" tone="red" icon={Wrench} />
         <Kpi label="Ưu tiên cao" value="2" sub="thiết bị" tone="amber" icon={Activity} />
@@ -374,6 +428,8 @@ function Maintenance() {
           </table>
         </div>
       </Panel>
+        </>
+      )}
     </>
   );
 }
@@ -504,6 +560,153 @@ const reportCats = [
   'Báo cáo doanh thu từ xa',
   'Tần suất hoạt động Pallet',
 ];
+const paretoFaults: [string, number][] = [
+  ['Quá tải nhiệt motor nâng', 42],
+  ['Cảm biến hành trình lỗi', 27],
+  ['Mất kết nối AI-VDS', 15],
+  ['Kẹt cơ cấu trượt', 9],
+  ['Khác', 7],
+];
+const revenueBars: [string, number][] = [
+  ['Zone A – Hầm B1', 82],
+  ['Zone B – Hầm B2', 64],
+  ['Zone C – Hầm B3', 38],
+  ['Zone D – Tầng 1', 29],
+];
+const maintHistory = [
+  ['15/06/2026', 'Block A-04', 'Motor Nâng Hạ', 'Thay cuộn hút phanh'],
+  ['10/06/2026', 'Block B-03', 'Hộp số', 'Thay dầu bôi trơn'],
+  ['02/06/2026', 'Block A-02', 'Cảm biến', 'Hiệu chuẩn AI-VDS'],
+  ['28/05/2026', 'Block B-01', 'Xích nâng', 'Căng lại xích, tra mỡ'],
+];
+function ReportBody({ cat }: { cat: number }) {
+  if (cat === 1)
+    return (
+      <Panel title="Phân tích Pareto lỗi thiết bị (%)" pad>
+        {paretoFaults.map(([d, v]) => (
+          <div className="week-row" key={d}>
+            <span>{d}</span>
+            <Bar value={v} tone="#ff8996" />
+            <b>{v}%</b>
+          </div>
+        ))}
+      </Panel>
+    );
+  if (cat === 2)
+    return (
+      <Panel title="Lịch sử bảo trì đã thực hiện" pad>
+        <div className="table-scroll">
+          <table className="grid-table">
+            <thead>
+              <tr>
+                <th>Ngày</th>
+                <th>Block</th>
+                <th>Thiết bị</th>
+                <th>Nội dung</th>
+              </tr>
+            </thead>
+            <tbody>
+              {maintHistory.map((r, i) => (
+                <tr key={i}>
+                  <td className="mono">{r[0]}</td>
+                  <td>{r[1]}</td>
+                  <td>{r[2]}</td>
+                  <td>{r[3]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    );
+  if (cat === 3)
+    return (
+      <Panel title="Lịch sử quẹt thẻ xe (RFID)" pad>
+        <div className="table-scroll">
+          <table className="grid-table">
+            <thead>
+              <tr>
+                <th>Mã thẻ</th>
+                <th>Biển số</th>
+                <th>Lần dùng cuối</th>
+                <th>Trạng thái</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cards.map((c) => (
+                <tr key={c[0] as string}>
+                  <td className="mono">{c[0]}</td>
+                  <td className="mono">{c[1]}</td>
+                  <td>{c[8]}</td>
+                  <td>
+                    <Badge tone={c[7] ? 'green' : 'amber'}>
+                      {c[6] as string}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    );
+  if (cat === 4)
+    return (
+      <Panel title="Doanh thu bãi đỗ theo Zone (triệu đồng)" pad>
+        {revenueBars.map(([d, v]) => (
+          <div className="week-row" key={d}>
+            <span>{d}</span>
+            <Bar value={v} tone="#31cba4" />
+            <b>{v} tr</b>
+          </div>
+        ))}
+      </Panel>
+    );
+  if (cat === 5)
+    return (
+      <Panel title="Tần suất hoạt động Pallet (chu kỳ/tháng)" pad>
+        {blockFreq.slice(0, 8).map((b) => (
+          <div className="week-row" key={b.id}>
+            <span>
+              {b.id} · {b.z}
+            </span>
+            <Bar value={b.pct} />
+            <b>{b.cyc}</b>
+          </div>
+        ))}
+      </Panel>
+    );
+  return (
+    <div className="two-col">
+      <Panel title="Mật độ đỗ xe theo ngày trong tuần (%)" pad>
+        {weekDensity.map(([d, v]) => (
+          <div className="week-row" key={d}>
+            <span>{d}</span>
+            <Bar value={v} />
+            <b>{v}%</b>
+          </div>
+        ))}
+      </Panel>
+      <Panel title="Phân loại phương tiện đỗ thực tế" pad>
+        <div className="vtype-row">
+          <span>Xe SUV (Gầm cao)</span>
+          <b className="amber-t">47% (37 xe)</b>
+        </div>
+        <Bar value={47} tone="#f1bc5b" />
+        <div className="vtype-row">
+          <span>Xe Sedan / Hatchback</span>
+          <b className="blue-t">49% (54 xe)</b>
+        </div>
+        <Bar value={49} tone="#4095ff" />
+        <div className="vtype-row">
+          <span>Xe quá khổ (Từ chối)</span>
+          <b className="red-t">4% (3 xe)</b>
+        </div>
+        <Bar value={4} tone="#ff8996" />
+      </Panel>
+    </div>
+  );
+}
 function Reports() {
   const [cat, setCat] = useState(0);
   return (
@@ -522,34 +725,7 @@ function Reports() {
         </div>
       </Panel>
       <div className="stack">
-        <div className="two-col">
-          <Panel title="Mật độ đỗ xe theo ngày trong tuần (%)" pad>
-            {weekDensity.map(([d, v]) => (
-              <div className="week-row" key={d}>
-                <span>{d}</span>
-                <Bar value={v} />
-                <b>{v}%</b>
-              </div>
-            ))}
-          </Panel>
-          <Panel title="Phân loại phương tiện đỗ thực tế" pad>
-            <div className="vtype-row">
-              <span>Xe SUV (Gầm cao)</span>
-              <b className="amber-t">47% (37 xe)</b>
-            </div>
-            <Bar value={47} tone="#f1bc5b" />
-            <div className="vtype-row">
-              <span>Xe Sedan / Hatchback</span>
-              <b className="blue-t">49% (54 xe)</b>
-            </div>
-            <Bar value={49} tone="#4095ff" />
-            <div className="vtype-row">
-              <span>Xe quá khổ (Từ chối)</span>
-              <b className="red-t">4% (3 xe)</b>
-            </div>
-            <Bar value={4} tone="#ff8996" />
-          </Panel>
-        </div>
+        <ReportBody cat={cat} />
       </div>
     </div>
   );
