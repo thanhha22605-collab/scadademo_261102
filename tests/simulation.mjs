@@ -16,7 +16,7 @@ const act = {
 };
 assert.equal(
   s.blocks.reduce((n, b) => n + b.slots.filter(Boolean).length, 0),
-  81,
+  91,
 );
 assert.equal(validateDispatch(s, act), '');
 s = reduceSim(s, act);

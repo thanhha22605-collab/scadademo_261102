@@ -41,6 +41,8 @@ import {
   type Action,
   type Block,
 } from '@/lib/simulation';
+import { Tag, Badge } from './ui';
+import { ExtraViews, extraPages } from './screens';
 export function useSimulation() {
   const [sim, dispatch] = useReducer(reduceSim, undefined, createSim);
   useEffect(() => {
@@ -54,22 +56,6 @@ export function useSimulation() {
   return { sim, dispatch };
 }
 const time = () => new Date().toLocaleString('vi-VN');
-function Tag({ text }: { text: string }) {
-  const tone =
-    text === 'Bình thường' || text === 'Hoàn tất'
-      ? 'green'
-      : text === 'Đang chạy'
-        ? 'blue'
-        : text === 'Bảo trì' || text === 'Đã hủy'
-          ? 'purple'
-          : 'amber';
-  return (
-    <span className={'status ' + tone}>
-      <i />
-      {text}
-    </span>
-  );
-}
 function Box({
   title,
   children,
@@ -125,6 +111,41 @@ function Choice({
     </label>
   );
 }
+function MotorTrend() {
+  const pts = Array.from({ length: 60 }, (_, i) => {
+    const base = 12 + Math.sin(i / 3) * 3 + Math.sin(i / 1.7) * 1.5;
+    const spike = i > 40 && i < 44 ? 6 : 0;
+    const v = base + spike;
+    const x = 20 + i * (720 / 59);
+    const y = 175 - (v / 22) * 150;
+    return `${x.toFixed(0)},${y.toFixed(0)}`;
+  }).join(' ');
+  return (
+    <div className="trend">
+      <div className="trend-live-top">
+        <span className="muted">Dòng điện Motor nâng (Real-time Trend)</span>
+        <span className="trend-live-val">
+          Giá trị hiện tại: <strong>13.7 A</strong>
+        </span>
+        <Badge tone="green">Sóng PLC Live</Badge>
+      </div>
+      <svg viewBox="0 0 760 200" role="img" aria-label="Đồ thị dòng điện motor nâng">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <line
+            key={i}
+            x1="20"
+            x2="740"
+            y1={175 - i * 37}
+            y2={175 - i * 37}
+            stroke="#243347"
+            strokeDasharray="3 5"
+          />
+        ))}
+        <polyline points={pts} fill="none" stroke="#4095ff" strokeWidth="2" />
+      </svg>
+    </div>
+  );
+}
 export function SimulatorViews({
   page,
   sim,
@@ -177,6 +198,8 @@ export function SimulatorViews({
     },
     [b.id, slot, plate, sim, dispatch],
   );
+  if (extraPages.includes(page))
+    return <ExtraViews page={page} sim={sim} />;
   const selector = (
     <div className="toolbar">
       <Choice
@@ -240,7 +263,7 @@ export function SimulatorViews({
       </div>
     );
   }
-  if (page === 'map' || page === 'control')
+  if (page === 'control')
     return (
       <>
         {selector}
@@ -617,7 +640,9 @@ export function SimulatorViews({
     const cars = sim.blocks
       .flatMap((b) =>
         b.slots.flatMap((plate, i) =>
-          plate ? [{ plate, block: b.id, zone: b.zone, slot: i }] : [],
+          plate
+            ? [{ plate, block: b.id, zone: b.zone, slot: i, kind: b.kinds[i] }]
+            : [],
         ),
       )
       .filter((c) =>
@@ -640,17 +665,23 @@ export function SimulatorViews({
         <Table>
           <TableHeader>
             <TableRow>
-              {['Biển số', 'Phân khu', 'Block', 'Pallet', 'Trạng thái'].map(
-                (h) => (
-                  <TableHead key={h}>{h}</TableHead>
-                ),
-              )}
+              {[
+                'Biển số',
+                'Loại xe',
+                'Phân khu',
+                'Block',
+                'Pallet',
+                'Trạng thái',
+              ].map((h) => (
+                <TableHead key={h}>{h}</TableHead>
+              ))}
             </TableRow>
           </TableHeader>
           <TableBody>
             {cars.map((c) => (
               <TableRow key={c.plate}>
                 <TableCell className="mono">{c.plate}</TableCell>
+                <TableCell>{c.kind ?? '—'}</TableCell>
                 <TableCell>Zone {c.zone}</TableCell>
                 <TableCell>{c.block}</TableCell>
                 <TableCell>P{String(c.slot + 1).padStart(2, '0')}</TableCell>
@@ -687,19 +718,26 @@ export function SimulatorViews({
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   return (
-    <Box
-      title="Nhật ký vận hành"
-      aside={
-        <button
-          className="secondary"
-          disabled={!sim.logs.length}
-          onClick={download}
-        >
-          <Download size={16} />
-          Xuất CSV
-        </button>
-      }
-    >
+    <div className="stack">
+      <Box
+        title="Biểu đồ xu hướng kỹ thuật (Historian & Trend)"
+        aside={<span className="muted">Motor nâng · Block B-04</span>}
+      >
+        <MotorTrend />
+      </Box>
+      <Box
+        title="Nhật ký vận hành"
+        aside={
+          <button
+            className="secondary"
+            disabled={!sim.logs.length}
+            onClick={download}
+          >
+            <Download size={16} />
+            Xuất CSV
+          </button>
+        }
+      >
       <p className="hint">
         500 sự kiện gần nhất trong phiên mô phỏng. Tải lại trang sẽ khởi tạo lại
         dữ liệu.
@@ -722,11 +760,12 @@ export function SimulatorViews({
           ))}
         </TableBody>
       </Table>
-      {!sim.logs.length && (
-        <div className="empty-state">
-          Chưa có sự kiện. Nhật ký sẽ xuất hiện khi bạn thao tác.
-        </div>
-      )}
-    </Box>
+        {!sim.logs.length && (
+          <div className="empty-state">
+            Chưa có sự kiện. Nhật ký sẽ xuất hiện khi bạn thao tác.
+          </div>
+        )}
+      </Box>
+    </div>
   );
 }
