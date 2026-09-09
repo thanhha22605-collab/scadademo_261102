@@ -61,7 +61,22 @@ PLC_HOST=192.168.1.50 PLC_PORT=502 PLC_ID=1 npm start
 Sửa **`tagmap.mjs`**: mỗi Block khai báo coil cửa/E-Stop/kết nối/lỗi và 1 holding
 register cho số xe.
 
-> Cả hai bản đều phát cùng một định dạng snapshot nên web app không phải sửa gì.
+> Cả ba bản (Modbus, FINS, FINS-multi) đều phát cùng một định dạng snapshot nên
+> web app không phải sửa gì.
+
+## 1C. Nhiều PLC / nhiều cụm (FINS-multi)
+
+Thực địa có nhiều cụm puzzle/comb, mỗi cụm là 1 PLC CP2E riêng:
+
+```bash
+cp units.example.mjs units.mjs   # điền IP + địa chỉ D từng cụm
+npm run start:omron-multi
+```
+
+## Lấy đúng địa chỉ PLC
+
+File `.cxp`/`.emtp` là nhị phân đóng, không đọc địa chỉ từ ngoài được. Xem
+**`MAPPING.md`** để biết cần export gì từ CX-Programmer / NB-Designer.
 
 ## 3. Nối web app vào gateway
 

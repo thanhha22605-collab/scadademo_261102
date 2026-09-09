@@ -6,7 +6,8 @@
   "description": "Gateway đọc PLC (Modbus TCP hoặc Omron FINS) và phát cho TotalParking SCADA qua WebSocket",
   "scripts": {
     "start": "node index.mjs",
-    "start:omron": "node index.omron.mjs"
+    "start:omron": "node index.omron.mjs",
+    "start:omron-multi": "node index.omron.multi.mjs"
   },
   "dependencies": {
     "modbus-serial": "^8.0.17",
