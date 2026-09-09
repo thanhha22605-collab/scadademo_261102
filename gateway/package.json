@@ -1,0 +1,14 @@
+{
+  "name": "totalparking-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Modbus TCP gateway — đọc PLC và phát cho TotalParking SCADA qua WebSocket",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "modbus-serial": "^8.0.17",
+    "ws": "^8.18.0"
+  }
+}

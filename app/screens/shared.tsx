@@ -1,6 +1,7 @@
 'use client';
-import { useEffect, useReducer, useState } from 'react';
+import { useEffect, useReducer, useRef, useState } from 'react';
 import { Send } from 'lucide-react';
+import { DATA_MODE, GATEWAY_WS, PlcSource } from './datasource';
 import {
   Select,
   SelectTrigger,
@@ -32,17 +33,35 @@ export type ScreenProps = {
   setPage: (p: string) => void;
 };
 
-/* ---- simulation lifecycle hook ---- */
+/* ---- simulation lifecycle hook ----
+ * Mặc định (VITE_DATA_SOURCE=sim): chạy bộ mô phỏng trong bộ nhớ.
+ * Khi VITE_DATA_SOURCE=plc: đọc snapshot thật từ gateway qua WebSocket,
+ * nạp vào UI bằng action 'load'; các lệnh điều khiển được gửi xuống gateway
+ * (gateway mặc định từ chối ghi cho tới khi bật ALLOW_WRITES=true).
+ */
 export function useSimulation() {
-  const [sim, dispatch] = useReducer(reduceSim, undefined, createSim);
+  const [sim, baseDispatch] = useReducer(reduceSim, undefined, createSim);
+  const srcRef = useRef<PlcSource | null>(null);
   useEffect(() => {
+    if (DATA_MODE === 'plc') {
+      const src = new PlcSource(GATEWAY_WS, (s) =>
+        baseDispatch({ type: 'load', sim: s }),
+      );
+      srcRef.current = src;
+      src.start();
+      return () => src.stop();
+    }
     const t = setInterval(
       () =>
-        dispatch({ type: 'tick', time: new Date().toLocaleString('vi-VN') }),
+        baseDispatch({ type: 'tick', time: new Date().toLocaleString('vi-VN') }),
       1000,
     );
     return () => clearInterval(t);
   }, []);
+  const dispatch: React.Dispatch<Action> =
+    DATA_MODE === 'plc'
+      ? (action) => srcRef.current?.command(action)
+      : baseDispatch;
   return { sim, dispatch };
 }
 

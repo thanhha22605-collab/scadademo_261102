@@ -349,6 +349,7 @@ export function status(b: Block, s: Sim) {
 }
 export type Action =
   | { type: 'tick'; time: string }
+  | { type: 'load'; sim: Sim }
   | {
       type: 'dispatch';
       block: string;
@@ -423,6 +424,8 @@ const cmdLabel: Record<string, string> = {
   PLC: 'Gửi lệnh trực tiếp xuống PLC',
 };
 export function reduceSim(state: Sim, a: Action): Sim {
+  // Nạp trọn snapshot (dùng khi đọc dữ liệu thật từ PLC qua gateway).
+  if (a.type === 'load') return a.sim;
   if (a.type === 'dispatch' && validateDispatch(state, a)) return state;
   const s: Sim = structuredClone(state);
   const log = (block: string, text: string) => {

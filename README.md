@@ -38,6 +38,26 @@ Chỉ các màn hình **Điều khiển vận hành, Hàng đợi xe, Truy vết
 
 Chỉ mô phỏng trong bộ nhớ của mỗi tab; tải lại trang sẽ khởi tạo lại. Không kết nối PLC, camera, RFID hay thiết bị thật. Biểu đồ ca sáng và các màn hình báo cáo/chẩn đoán/bảo trì dùng dữ liệu tham khảo mẫu; các số liệu trạng thái hiện tại (xe đang đỗ, SUV/Sedan, vị trí khả dụng) tính từ pallet. Đồng hồ tiến trình phụ thuộc timer của trình duyệt; tab nền có thể chạy chậm hơn. Nút Đăng nhập không xác thực thật. Đây chưa phải bộ điều khiển chuyển động hoặc triển khai SCADA công nghiệp.
 
-Logic và kiểm tra lệnh: lib/simulation.ts. Điều phối trạng thái và màn hình tương tác: app/page.tsx, app/simulator.tsx. Các màn hình tham khảo v2.4: app/screens.tsx. Thành phần dùng chung: app/ui.tsx. Giao diện: app/globals.css. Công cụ WebMCP navigate_scada_view chỉ điều hướng giao diện (19 view), không gửi lệnh vận hành.
+Cấu trúc: lõi mô phỏng ở lib/simulation.ts. Khung + điều hướng ở app/page.tsx; cấu hình menu ở app/nav.tsx. Mỗi tab là một module riêng trong app/screens/<Tên>.tsx, gom qua app/screens/index.ts; thành phần dùng chung ở app/screens/shared.tsx và app/ui.tsx; giao diện ở app/globals.css. Công cụ WebMCP navigate_scada_view chỉ điều hướng giao diện (19 view), không gửi lệnh vận hành.
 
 Đã kiểm tra: build, TypeScript, các tình huống mô phỏng trong tests/simulation.mjs và hợp đồng WebMCP (đầu vào hợp lệ / không hợp lệ). Chưa thực hiện kiểm thử tương tác trình duyệt toàn diện.
+
+## Kết nối PLC thật (Modbus TCP)
+
+Web app mặc định chạy mô phỏng. Để đọc tín hiệu PLC thật:
+
+1. Chạy gateway (Node, cùng mạng với PLC): xem `gateway/README.md`.
+   ```bash
+   cd gateway && npm install && PLC_HOST=192.168.1.50 npm start
+   ```
+2. Bật chế độ PLC cho web app bằng file `.env` ở thư mục gốc (mẫu: `.env.example`):
+   ```
+   VITE_DATA_SOURCE=plc
+   VITE_GATEWAY_WS=ws://192.168.1.10:8081
+   ```
+3. `npm run dev` lại. `useSimulation()` (app/screens/shared.tsx) sẽ đọc snapshot
+   thật qua lớp DataSource (app/screens/datasource.ts) thay cho bộ mô phỏng.
+
+Trình duyệt không nói Modbus trực tiếp được nên bắt buộc có gateway; nó phải chạy
+on-prem (không chạy trong Cloudflare Worker khi triển khai `npm start`/wrangler).
+Bắt đầu chỉ đọc — ghi xuống PLC mặc định bị khóa (`ALLOW_WRITES=false`).
