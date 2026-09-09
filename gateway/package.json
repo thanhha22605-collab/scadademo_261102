@@ -3,12 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Modbus TCP gateway — đọc PLC và phát cho TotalParking SCADA qua WebSocket",
+  "description": "Gateway đọc PLC (Modbus TCP hoặc Omron FINS) và phát cho TotalParking SCADA qua WebSocket",
   "scripts": {
-    "start": "node index.mjs"
+    "start": "node index.mjs",
+    "start:omron": "node index.omron.mjs"
   },
   "dependencies": {
     "modbus-serial": "^8.0.17",
+    "omron-fins": "^2.1.0",
     "ws": "^8.18.0"
   }
 }

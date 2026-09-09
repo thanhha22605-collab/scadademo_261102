@@ -9,15 +9,45 @@ Worker).
 [ PLC ] --Modbus TCP 502--> [ gateway (máy này) ] --WebSocket 8081--> [ web app SCADA ]
 ```
 
-## 1. Cài đặt & chạy
+## Chọn giao thức theo PLC
+
+- **Omron CP2E / CP1 / CJ / CS…** → dùng **FINS** (`index.omron.mjs`).
+  CP2E N-type có Modbus-TCP nhưng ở vai trò **Master** (đi đọc thiết bị khác),
+  KHÔNG chạy Modbus slave, nên không đọc trực tiếp bằng bản Modbus được.
+- **PLC chạy được Modbus-TCP slave/server** (Delta, Wecon, Inovance, một số
+  Schneider…) → dùng bản **Modbus** (`index.mjs`).
+
+## 1A. Omron CP2E (FINS) — khuyến nghị cho máy của bạn
+
+Chuẩn bị trên PLC (CX-Programmer / CX-One):
+- Bật cổng Ethernet, đặt IP (mặc định `192.168.250.1`), bật **FINS/TCP cổng 9600**.
+- Trong ladder, ghi **số xe** mỗi block vào `D0..D8` và **word trạng thái** (bit
+  cửa/E-Stop/kết nối/lỗi) vào `D100..D108` — xem `tagmap.omron.mjs`.
+
+```bash
+cd gateway
+npm install
+FINS_HOST=192.168.250.1 FINS_PORT=9600 npm run start:omron
+```
+
+| Biến            | Mặc định          | Ý nghĩa                       |
+| --------------- | ----------------- | ----------------------------- |
+| `FINS_HOST`     | `192.168.250.1`   | IP Ethernet của CP2E          |
+| `FINS_PORT`     | `9600`            | Cổng FINS                     |
+| `FINS_PROTOCOL` | `tcp`             | `tcp` hoặc `udp`              |
+| `POLL_MS`       | `500`             | Chu kỳ đọc (ms)               |
+| `WS_PORT`       | `8081`            | Cổng WebSocket cho web app    |
+| `ALLOW_WRITES`  | `false`           | Cho phép GHI (nguy hiểm)      |
+
+Sửa **`tagmap.omron.mjs`** nếu PLC bạn đặt số xe/trạng thái ở vùng địa chỉ khác.
+
+## 1B. Modbus TCP (PLC hỗ trợ slave)
 
 ```bash
 cd gateway
 npm install
 PLC_HOST=192.168.1.50 PLC_PORT=502 PLC_ID=1 npm start
 ```
-
-Biến môi trường (xem `config.mjs`):
 
 | Biến           | Mặc định        | Ý nghĩa                                  |
 | -------------- | --------------- | ---------------------------------------- |
@@ -28,10 +58,10 @@ Biến môi trường (xem `config.mjs`):
 | `WS_PORT`      | `8081`          | Cổng WebSocket phát cho web app          |
 | `ALLOW_WRITES` | `false`         | Cho phép GHI xuống PLC (nguy hiểm)       |
 
-## 2. Ánh xạ tag
+Sửa **`tagmap.mjs`**: mỗi Block khai báo coil cửa/E-Stop/kết nối/lỗi và 1 holding
+register cho số xe.
 
-Sửa **`tagmap.mjs`** cho khớp bản đồ bộ nhớ PLC của bạn: mỗi Block khai báo
-coil cho cửa/E-Stop/kết nối/lỗi và 1 holding register cho số xe. Đọc-only.
+> Cả hai bản đều phát cùng một định dạng snapshot nên web app không phải sửa gì.
 
 ## 3. Nối web app vào gateway
 

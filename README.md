@@ -48,7 +48,11 @@ Web app mặc định chạy mô phỏng. Để đọc tín hiệu PLC thật:
 
 1. Chạy gateway (Node, cùng mạng với PLC): xem `gateway/README.md`.
    ```bash
-   cd gateway && npm install && PLC_HOST=192.168.1.50 npm start
+   cd gateway && npm install
+   # Omron CP2E / CP1 / CJ (FINS):
+   FINS_HOST=192.168.250.1 npm run start:omron
+   # hoặc PLC hỗ trợ Modbus-TCP slave:
+   PLC_HOST=192.168.1.50 npm start
    ```
 2. Bật chế độ PLC cho web app bằng file `.env` ở thư mục gốc (mẫu: `.env.example`):
    ```
