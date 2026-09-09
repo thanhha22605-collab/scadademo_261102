@@ -494,7 +494,7 @@ export default function Home() {
   const action = screenAction[page];
   return (
     <SidebarProvider
-      style={{ '--sidebar-width': '238px' } as React.CSSProperties}
+      style={{ '--sidebar-width': '208px' } as React.CSSProperties}
     >
       <Sidebar className="scada-sidebar">
         <SidebarHeader>

@@ -2272,3 +2272,59 @@ h1 {
   background: #15375d;
   color: #8cc0ff;
 }
+
+/* ===================== narrower sidebar + visible toggle ===================== */
+.brand {
+  padding: 13px 8px 15px;
+  font-size: 17px;
+  gap: 9px;
+}
+.brand-mark {
+  width: 33px;
+  height: 33px;
+  font-size: 17px;
+}
+.brand small {
+  letter-spacing: 1.3px;
+  margin-top: 4px;
+}
+.scada-sidebar [data-slot='sidebar-group-label'] {
+  margin-top: 13px;
+  padding-left: 11px;
+  letter-spacing: 1px;
+}
+.scada-sidebar [data-slot='sidebar-menu-button'] {
+  min-height: 37px;
+  padding: 8px 11px;
+  font-size: 13px;
+  gap: 9px;
+}
+.scada-sidebar [data-slot='sidebar-menu-button'] svg {
+  width: 17px;
+  height: 17px;
+}
+.sidebar-site {
+  padding: 14px 6px;
+  font-size: 13px;
+}
+.sidebar-site small {
+  margin: 4px 0 8px;
+}
+.version {
+  padding: 8px 6px;
+}
+.topbar [data-slot='sidebar-trigger'] {
+  border: 1px solid #33475f;
+  background: #16233690;
+  color: #b8cce8;
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.topbar [data-slot='sidebar-trigger']:hover {
+  background: #1c2f47;
+}
