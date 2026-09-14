@@ -30,7 +30,12 @@ const COUNTBITS = {
     'W2.12', 'W2.13', 'W1.13', 'W1.14', // Tầng 1: 102,103,112,113
     'W4.12', 'W4.13', 'W4.14', 'W3.13', 'W3.14', 'W3.15', // Tầng 2: 201,202,203,211,212,213
   ],
-  // loai_10: [...],  // mở TRANG_THAI_PALLET của .cxp 10 chỗ rồi điền tương tự
+  // Loại +2/-1, 10 chỗ (đọc từ ladder 10车位 V1.0, section 车位汇总):
+  loai_10: [
+    'W8.00', 'W8.01', 'W8.03', 'W8.04', // Hầm B1: 001,002,011,012
+    'W2.12', 'W1.13', // Tầng 1: 102,112
+    'W4.12', 'W4.13', 'W3.13', 'W3.14', // Tầng 2: 201,202,211,212
+  ],
 };
 // Tiện dụng: IP theo số block
 const plc = (n) => `192.169.1.${100 + n}`;
@@ -43,9 +48,9 @@ export const UNITS = [
     port: 9600,
     protocol: 'tcp',
     capacity: 10, // = số phần tử countBits của loại này
-    estop: 'W0.00',
-    fault: 'W15.07',
-    // door: 'W1.08',   // 栅栏门下限位 — XÁC NHẬN bằng check.mjs trước khi bật
+    estop: 'W0.00', // 急停
+    fault: 'W15.07', // 有故障
+    door: 'W1.08', // rào hạ = đóng (栅栏门下限位) — chốt hướng bằng check.mjs
     countBits: COUNTBITS.loai_10 ?? [],
   },
   {
