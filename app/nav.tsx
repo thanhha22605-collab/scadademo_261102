@@ -69,6 +69,7 @@ export const nav: { group: string; items: NavItem[] }[] = [
   {
     group: 'CẤU HÌNH & BẢO MẬT',
     items: [
+      { id: 'plcconfig', label: 'Cấu hình PLC', icon: Server, title: 'Cấu hình PLC (thêm / sửa từng tháp)', sub: 'Khai báo danh sách PLC: chọn loại tháp, IP tự suy, lưu xuống gateway.' },
       { id: 'settings', label: 'Cấu hình hệ thống', icon: SettingsIcon, title: 'Cấu hình hệ thống (Settings)', sub: 'Quản lý tham số Modbus, cơ sở dữ liệu và tích hợp API ngoài.' },
       { id: 'users', label: 'User & Permission', icon: Users, title: 'Hỗ trợ từ xa & phân quyền người dùng', sub: 'Quản lý ma trận quyền, phiên làm việc và nhật ký Audit Log.' },
       { id: 'backup', label: 'Backup & Health', icon: Server, title: 'Sao lưu & sức khỏe hệ thống (Backup & Health)', sub: 'Giám sát tải CPU, kết nối Database, UPS và lịch sử backup.' },

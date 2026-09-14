@@ -13,6 +13,9 @@ const env =
 export const DATA_MODE: 'sim' | 'plc' =
   env.VITE_DATA_SOURCE === 'plc' ? 'plc' : 'sim';
 export const GATEWAY_WS = env.VITE_GATEWAY_WS ?? 'ws://localhost:8081';
+/* API HTTP của gateway (cùng cổng WS) để đọc/ghi cấu hình PLC. */
+export const GATEWAY_HTTP =
+  env.VITE_GATEWAY_HTTP ?? GATEWAY_WS.replace(/^ws/, 'http');
 
 /* Snapshot mà gateway gửi xuống (đã ánh xạ tag → ý nghĩa, xem gateway/tagmap.mjs). */
 export type PlcBlock = {

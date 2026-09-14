@@ -1,37 +1,58 @@
 /* =============================================================
- * TotalParking SCADA — Omron FINS gateway (NHIỀU PLC / nhiều cụm)
- * Đọc song song nhiều PLC CP2E (mỗi cụm 1 con) qua FINS/TCP rồi gộp thành
- * một snapshot cho web app. Cấu hình danh sách cụm trong `units.mjs`
- * (copy từ units.example.mjs) — mỗi tín hiệu là 1 địa chỉ PLC.
+ * TotalParking SCADA — Omron FINS gateway (nhiều tháp) + API cấu hình
+ * - Đọc song song nhiều PLC CP2E qua FINS, gộp thành snapshot cho web app (WS).
+ * - Lưu danh sách PLC ở units.json; giao diện SCADA sửa qua HTTP /config.
  *   cd gateway && npm install && npm run start:omron-multi
  * ============================================================= */
+import http from 'node:http';
+import fs from 'node:fs';
 import pkg from 'omron-fins';
 import { WebSocketServer } from 'ws';
 import { config } from './config.mjs';
+import { PRESETS, resolveUnit } from './presets.mjs';
 
 const { FinsClient } = pkg;
 const log = (...a) => console.log(new Date().toISOString(), ...a);
+const CONFIG_FILE = new URL('./units.json', import.meta.url);
 
-let UNITS;
-try {
-  ({ UNITS } = await import('./units.mjs'));
-} catch {
-  log('Chưa có units.mjs. Copy units.example.mjs -> units.mjs rồi điền IP/địa chỉ.');
-  process.exit(1);
+/* ---- lưu / nạp cấu hình (danh sách PLC dạng UI) ---- */
+function loadConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+  } catch {
+    return [];
+  }
 }
-
-/* 'W0.03' -> { word:'W0', bit:3 } ; 'D0' -> { word:'D0', bit:null } */
-function parseAddr(s) {
-  const m = String(s).trim().toUpperCase().match(/^(CIO|DM|D|WR|W|HR|H|AR|A)?\s*0*(\d+)(?:\.(\d{1,2}))?$/);
-  if (!m) throw new Error('Địa chỉ không hợp lệ: ' + s);
-  const areaRaw = m[1] || 'CIO';
-  const area = { DM: 'D', WR: 'W', HR: 'H', AR: 'A' }[areaRaw] || areaRaw;
-  return { word: area + m[2], bit: m[3] != null ? Number(m[3]) : null };
+function saveConfig(list) {
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(list, null, 2));
 }
-
+let uiUnits = loadConfig();
+let runtime = [];
 const clients = new Map();
 let snapshot = { blocks: [], connected: false, at: Date.now() };
 
+function applyConfig(list) {
+  uiUnits = list;
+  runtime = uiUnits.filter((u) => u.enabled !== false).map(resolveUnit).filter(Boolean);
+  for (const c of clients.values()) {
+    try {
+      c.close?.();
+    } catch {
+      /* ignore */
+    }
+  }
+  clients.clear();
+  log(`Áp dụng cấu hình: ${runtime.length} PLC đang bật`);
+}
+applyConfig(uiUnits);
+
+/* ---- đọc FINS ---- */
+function parseAddr(s) {
+  const m = String(s).trim().toUpperCase().match(/^(CIO|DM|D|WR|W|HR|H|AR|A)?\s*0*(\d+)(?:\.(\d{1,2}))?$/);
+  if (!m) throw new Error('Địa chỉ không hợp lệ: ' + s);
+  const area = { DM: 'D', WR: 'W', HR: 'H', AR: 'A' }[m[1]] || m[1] || 'CIO';
+  return { word: area + m[2], bit: m[3] != null ? Number(m[3]) : null };
+}
 function clientFor(u) {
   let c = clients.get(u.id);
   if (c) return c;
@@ -57,43 +78,22 @@ function readWord(client, wordAddr) {
     }
   });
 }
-
 async function readUnit(u) {
   const c = clientFor(u);
   try {
-    // gom các tín hiệu đơn (door/estop/online/fault + count nếu là 1 word)
     const fields = {};
-    for (const k of ['count', 'door', 'estop', 'online', 'fault'])
-      if (u[k]) fields[k] = parseAddr(u[k]);
-    // countBits: đếm số bit ON = số xe (dùng cho PLC TASECO, mỗi chỗ 1 bit 车位)
+    for (const k of ['door', 'estop', 'online', 'fault']) if (u[k]) fields[k] = parseAddr(u[k]);
     const countBits = Array.isArray(u.countBits) ? u.countBits.map(parseAddr) : [];
-    // đọc mỗi WORD cần thiết đúng 1 lần
-    const words = [
-      ...new Set([
-        ...Object.values(fields).map((f) => f.word),
-        ...countBits.map((f) => f.word),
-      ]),
-    ];
+    const words = [...new Set([...Object.values(fields).map((f) => f.word), ...countBits.map((f) => f.word)])];
     const wv = {};
     await Promise.all(words.map(async (w) => { wv[w] = await readWord(c, w); }));
-    const val = (k, dflt) => {
+    const bit = (k, dflt) => {
       const f = fields[k];
       if (!f) return dflt;
-      const w = wv[f.word];
-      return f.bit == null ? w : Boolean((w >> f.bit) & 1);
+      return f.bit == null ? wv[f.word] : Boolean((wv[f.word] >> f.bit) & 1);
     };
-    const count = countBits.length
-      ? countBits.reduce((n, f) => n + ((wv[f.word] >> f.bit) & 1), 0)
-      : val('count', 0);
-    return {
-      id: u.id,
-      capacity: u.capacity,
-      count,
-      doorClosed: val('door', true),
-      estop: val('estop', false),
-      online: val('online', true), // đọc được = coi như online
-      fault: val('fault', false),
-    };
+    const count = countBits.reduce((n, f) => n + ((wv[f.word] >> f.bit) & 1), 0);
+    return { id: u.id, zone: u.zone, capacity: u.capacity, count, doorClosed: bit('door', true), estop: bit('estop', false), online: bit('online', true), fault: bit('fault', false) };
   } catch (e) {
     log(`[${u.id}] lỗi đọc:`, e.message);
     try {
@@ -102,28 +102,68 @@ async function readUnit(u) {
       /* ignore */
     }
     clients.delete(u.id);
-    return { id: u.id, capacity: u.capacity, count: 0, doorClosed: false, estop: false, online: false, fault: false };
+    return { id: u.id, zone: u.zone, capacity: u.capacity, count: 0, doorClosed: false, estop: false, online: false, fault: false };
   }
 }
-
 async function poll() {
-  const blocks = await Promise.all(UNITS.map(readUnit));
+  if (!runtime.length) {
+    snapshot = { blocks: [], connected: false, at: Date.now() };
+    return broadcast();
+  }
+  const blocks = await Promise.all(runtime.map(readUnit));
   snapshot = { blocks, connected: blocks.some((b) => b.online), at: Date.now() };
   broadcast();
 }
 
-const wss = new WebSocketServer({ port: config.wsPort });
+/* ---- HTTP (API cấu hình) + WebSocket (snapshot) trên cùng 1 cổng ---- */
+function cors(res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+}
+const server = http.createServer((req, res) => {
+  cors(res);
+  if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+  if (req.url === '/config' && req.method === 'GET') {
+    res.setHeader('Content-Type', 'application/json');
+    return res.end(JSON.stringify({
+      units: uiUnits,
+      presets: Object.entries(PRESETS).map(([key, v]) => ({ key, label: v.label, capacity: v.capacity })),
+      ipPattern: '192.169.1.(100+N)',
+    }));
+  }
+  if (req.url === '/config' && req.method === 'PUT') {
+    let body = '';
+    req.on('data', (d) => (body += d));
+    req.on('end', () => {
+      try {
+        const list = JSON.parse(body);
+        if (!Array.isArray(list)) throw new Error('config phải là mảng');
+        saveConfig(list);
+        applyConfig(list);
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ ok: true, count: runtime.length }));
+      } catch (e) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ ok: false, error: e.message }));
+      }
+    });
+    return;
+  }
+  res.setHeader('Content-Type', 'text/plain');
+  res.end('TotalParking FINS gateway');
+});
+const wss = new WebSocketServer({ server });
 wss.on('connection', (ws) => {
   log('Web app đã kết nối');
   ws.send(JSON.stringify(snapshot));
-  ws.on('message', () =>
-    ws.send(JSON.stringify({ type: 'write-result', ok: false, reason: config.allowWrites ? 'Chưa map lệnh ghi.' : 'Ghi bị khóa.' })),
-  );
 });
 function broadcast() {
   const msg = JSON.stringify(snapshot);
   for (const c of wss.clients) if (c.readyState === 1) c.send(msg);
 }
 
-log(`FINS multi-gateway khởi động — ${UNITS.length} cụm — WebSocket ws://localhost:${config.wsPort}`);
+server.listen(config.wsPort, () => {
+  log(`FINS multi-gateway: HTTP+WS cổng ${config.wsPort} — ${runtime.length} PLC (từ units.json)`);
+});
 setInterval(poll, config.pollMs);

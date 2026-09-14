@@ -18,6 +18,7 @@ import Energy from './Energy';
 import Settings from './Settings';
 import Users from './Users';
 import Backup from './Backup';
+import PlcConfig from './PlcConfig';
 
 /* Bảng ánh xạ id tab -> module màn hình (mỗi tab một file riêng). */
 export const screenRegistry: Record<
@@ -40,6 +41,7 @@ export const screenRegistry: Record<
   cards: Cards,
   cctv: Cctv,
   energy: Energy,
+  plcconfig: PlcConfig,
   settings: Settings,
   users: Users,
   backup: Backup,

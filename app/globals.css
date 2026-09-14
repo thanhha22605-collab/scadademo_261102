@@ -2328,3 +2328,28 @@ h1 {
 .topbar [data-slot='sidebar-trigger']:hover {
   background: #1c2f47;
 }
+
+/* ===================== Cấu hình PLC ===================== */
+.cfg-in {
+  width: 100%;
+  min-width: 92px;
+  height: 30px;
+  background: #0c1727;
+  border: 1px solid #2b3f5a;
+  border-radius: 5px;
+  color: #dbe6f6;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.cfg-in:focus {
+  border-color: #438ff5;
+}
+.cfg-in.sm {
+  min-width: 62px;
+  width: 84px;
+}
+select.cfg-in {
+  cursor: pointer;
+}
