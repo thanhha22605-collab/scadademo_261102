@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node index.mjs",
     "start:omron": "node index.omron.mjs",
-    "start:omron-multi": "node index.omron.multi.mjs"
+    "start:omron-multi": "node index.omron.multi.mjs",
+    "check": "node check.mjs"
   },
   "dependencies": {
     "modbus-serial": "^8.0.17",
