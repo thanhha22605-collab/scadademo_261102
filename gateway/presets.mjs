@@ -46,7 +46,8 @@ export function resolveUnit(c) {
   const p = PRESETS[c.type];
   if (!p) return null;
   return {
-    id: c.name || `Block ${c.n}`,
+    id: c.id || `plc-${c.n}`,
+    name: c.name || `Block ${c.n}`,
     zone: c.zone || 'A',
     host: c.host || plc(c.n),
     port: c.port || DEFAULTS.port,

@@ -1,7 +1,7 @@
 'use client';
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useEffect, useReducer, useState } from 'react';
 import { Send } from 'lucide-react';
-import { DATA_MODE, GATEWAY_WS, PlcSource } from './datasource';
+import { DATA_MODE, GATEWAY_WS, PlcSource, initialPlcSim } from './datasource';
 import {
   Select,
   SelectTrigger,
@@ -40,29 +40,65 @@ export type ScreenProps = {
  * (gateway mặc định từ chối ghi cho tới khi bật ALLOW_WRITES=true).
  */
 export function useSimulation() {
-  const [sim, baseDispatch] = useReducer(reduceSim, undefined, createSim);
-  const srcRef = useRef<PlcSource | null>(null);
+  /* Chế độ PLC khởi tạo bằng Sim RỖNG (không dữ liệu demo); mọi màn chờ gói đầu tiên.
+   * Reducer tự chặn các action ghi khi source !== 'sim' (chỉ cho 'load' + 'ack'),
+   * nên cả hai chế độ đều dùng chung baseDispatch mà vẫn an toàn chỉ-đọc. */
+  const [sim, dispatch] = useReducer(
+    reduceSim,
+    undefined,
+    DATA_MODE === 'plc' ? initialPlcSim : createSim,
+  );
   useEffect(() => {
     if (DATA_MODE === 'plc') {
-      const src = new PlcSource(GATEWAY_WS, (s) =>
-        baseDispatch({ type: 'load', sim: s }),
-      );
-      srcRef.current = src;
+      const src = new PlcSource(GATEWAY_WS, (s) => dispatch({ type: 'load', sim: s }));
       src.start();
       return () => src.stop();
     }
     const t = setInterval(
-      () =>
-        baseDispatch({ type: 'tick', time: new Date().toLocaleString('vi-VN') }),
+      () => dispatch({ type: 'tick', time: time(), nowMs: Date.now() }),
       1000,
     );
     return () => clearInterval(t);
   }, []);
-  const dispatch: React.Dispatch<Action> =
-    DATA_MODE === 'plc'
-      ? (action) => srcRef.current?.command(action)
-      : baseDispatch;
   return { sim, dispatch };
+}
+
+/* Nguồn PLC là CHỈ ĐỌC: mọi thao tác điều khiển trong UI phải khóa lại. */
+export function isReadOnly(sim: Sim) {
+  return sim.source !== 'sim';
+}
+const CONN: Record<Sim['connection'], { label: string; tone: string }> = {
+  loading: { label: 'Đang chờ dữ liệu…', tone: 'amber' },
+  online: { label: 'Đang kết nối', tone: 'green' },
+  stale: { label: 'Dữ liệu cũ', tone: 'amber' },
+  offline: { label: 'Mất kết nối', tone: 'red' },
+};
+export function ConnectionBadge({ sim }: { sim: Sim }) {
+  if (sim.source === 'sim') return <Badge tone="blue">Chế độ mô phỏng</Badge>;
+  const c = CONN[sim.connection];
+  return (
+    <Badge tone={c.tone}>
+      {sim.source === 'mock' ? 'Gateway (giả lập) · ' : 'PLC · '}
+      {c.label}
+    </Badge>
+  );
+}
+/* Empty-state dùng chung khi chưa có Block nào (chưa cấu hình / chờ dữ liệu). */
+export function EmptyState({ sim, what }: { sim: Sim; what?: string }) {
+  const msg =
+    sim.source === 'sim'
+      ? 'Không có dữ liệu.'
+      : sim.connection === 'loading'
+        ? 'Đang chờ dữ liệu đầu tiên từ gateway…'
+        : sim.connection === 'offline'
+          ? 'Mất kết nối gateway. Đang thử kết nối lại…'
+          : 'Chưa cấu hình PLC nào. Vào “Cấu hình PLC” để khai báo tháp.';
+  return (
+    <div className="empty-state">
+      {msg}
+      {what ? <div className="muted">{what}</div> : null}
+    </div>
+  );
 }
 
 /* ---- helpers ---- */
@@ -204,6 +240,8 @@ export function BlockSelector({
   onPick: (id: string) => void;
 }) {
   const b = sim.blocks.find((x) => x.id === current) ?? sim.blocks[0];
+  if (!b) return <EmptyState sim={sim} />;
+  const zones = [...new Set(sim.blocks.map((x) => x.zone))].sort();
   return (
     <div className="toolbar">
       <Choice
@@ -216,7 +254,7 @@ export function BlockSelector({
         }}
         options={[
           { value: 'all', label: 'Tất cả phân khu' },
-          ...['A', 'B', 'C'].map((z) => ({ value: z, label: zoneLabel[z] })),
+          ...zones.map((z) => ({ value: z, label: zoneLabel[z] ?? `Zone ${z}` })),
         ]}
       />
       <Choice
@@ -225,7 +263,7 @@ export function BlockSelector({
         onChange={onPick}
         options={sim.blocks
           .filter((x) => zone === 'all' || x.zone === zone)
-          .map((x) => ({ value: x.id, label: 'Block ' + x.id }))}
+          .map((x) => ({ value: x.id, label: 'Block ' + (x.name ?? x.id) }))}
       />
       <Tag text={status(b, sim)} />
     </div>
@@ -283,23 +321,33 @@ export function MotorTrend({ metric = 'current' }: { metric?: string }) {
 export function PlcCommander({
   block,
   dispatch,
+  readOnly = false,
 }: {
   block: string;
   dispatch: React.Dispatch<Action>;
+  readOnly?: boolean;
 }) {
+  /* Vòng đời lệnh: chỉ hiển thị "Done" khi có bằng chứng hoàn tất.
+   * - Gateway hiện CHỈ ĐỌC → khóa gửi, nêu rõ chưa hỗ trợ điều khiển.
+   * - Chế độ mô phỏng → chuỗi trạng thái là mô phỏng, có nhãn rõ ràng. */
   const [stage, setStage] = useState('idle');
   useEffect(() => {
     if (stage === 'idle' || stage === 'done') return;
-    const next: Record<string, string> = {
-      sent: 'accepted',
-      accepted: 'running',
-      running: 'done',
-    };
+    const next: Record<string, string> = { sent: 'accepted', accepted: 'running', running: 'done' };
     const t = setTimeout(() => setStage(next[stage]), 750);
     return () => clearTimeout(t);
   }, [stage]);
   const order = ['sent', 'accepted', 'running', 'done'];
   const busy = stage !== 'idle' && stage !== 'done';
+  if (readOnly)
+    return (
+      <div className="plc-box">
+        <button className="secondary" disabled>
+          <Send size={15} /> Send
+        </button>
+        <span className="muted">Gateway chỉ đọc — chưa hỗ trợ điều khiển PLC.</span>
+      </div>
+    );
   return (
     <div className="plc-box">
       <button
@@ -312,12 +360,13 @@ export function PlcCommander({
       >
         <Send size={15} /> Send
       </button>
-      <div className="plc-stages">
+      <div className="plc-stages" aria-label="Chuỗi trạng thái mô phỏng">
         {['Sent', 'Accepted', 'Running', 'Done'].map((s, i) => (
           <span key={s} className={order.indexOf(stage) >= i ? 'on' : ''}>
             {s}
           </span>
         ))}
+        <span className="muted">· mô phỏng</span>
       </div>
     </div>
   );

@@ -1,191 +1,66 @@
-/* =============================================================
- * TotalParking SCADA — Omron FINS gateway (nhiều tháp) + API cấu hình
- * - Đọc song song nhiều PLC CP2E qua FINS, gộp thành snapshot cho web app (WS).
- * - Lưu danh sách PLC ở units.json; giao diện SCADA sửa qua HTTP /config.
- *   cd gateway && npm install && npm run start:omron-multi
- * ============================================================= */
 import http from 'node:http';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import pkg from 'omron-fins';
 import { WebSocketServer } from 'ws';
 import { config } from './config.mjs';
-import { PRESETS, resolveUnit } from './presets.mjs';
+import { PRESETS } from './presets.mjs';
+import { Poller, atomicSave, authorized, validateConfig } from './core.mjs';
 
-const { FinsClient } = pkg;
-const log = (...a) => console.log(new Date().toISOString(), ...a);
-const CONFIG_FILE = new URL('./units.json', import.meta.url);
-
-/* ---- lưu / nạp cấu hình (danh sách PLC dạng UI) ---- */
-function loadConfig() {
-  try {
-    return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-  } catch {
-    return [];
-  }
-}
-function saveConfig(list) {
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(list, null, 2));
-}
-let uiUnits = loadConfig();
-let runtime = [];
-const clients = new Map();
-let snapshot = { blocks: [], connected: false, at: Date.now() };
-
-function applyConfig(list) {
-  uiUnits = list;
-  runtime = uiUnits.filter((u) => u.enabled !== false).map(resolveUnit).filter(Boolean);
-  for (const c of clients.values()) {
+const file = fileURLToPath(new URL('./units.json', import.meta.url));
+let units = [];
+try { units=validateConfig(JSON.parse(fs.readFileSync(file,'utf8'))); }
+catch(e) { console.error(e.code==='ENOENT'?'Chưa có cấu hình PLC.':'Cấu hình không hợp lệ; gateway khởi động ở trạng thái chưa cấu hình.'); }
+let snapshot={blocks:[],connected:false,at:Date.now(),source:config.mock?'mock':'plc'};
+const origins=new Set(config.allowedOrigins);
+function originAllowed(req) { return !req.headers.origin || origins.has(req.headers.origin); }
+function json(res,code,data) { res.writeHead(code,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data)); }
+const poller=new Poller({mock:config.mock,makeClient(u){
+  const c=pkg.FinsClient(u.port,u.host,{protocol:u.protocol,timeout:2000});
+  c.on('error',()=>{});c.on('timeout',()=>{});return c;
+},publish(data){snapshot=data;for(const c of wss.clients)if(c.readyState===1)c.send(JSON.stringify(snapshot));}});
+const server=http.createServer((req,res)=>{
+  if(!originAllowed(req))return json(res,403,{ok:false,error:'Origin không được phép.'});
+  if(req.headers.origin){res.setHeader('Access-Control-Allow-Origin',req.headers.origin);res.setHeader('Vary','Origin');}
+  res.setHeader('Access-Control-Allow-Methods','GET, PUT, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization');
+  if(req.method==='OPTIONS'){res.writeHead(204);return res.end();}
+  if(req.url==='/health'&&req.method==='GET')return json(res,200,{ok:true,source:snapshot.source,readOnly:true});
+  if(req.url!=='/config')return json(res,404,{ok:false,error:'Không tìm thấy API.'});
+  if(!authorized(req.headers.authorization,config.adminToken))return json(res,401,{ok:false,error:'Cần token quản trị gateway (GATEWAY_ADMIN_TOKEN, tối thiểu 24 ký tự).'});
+  if(req.method==='GET')return json(res,200,{units,presets:Object.entries(PRESETS).map(([key,v])=>({key,label:v.label,capacity:v.capacity})),readOnly:true});
+  if(req.method!=='PUT')return json(res,405,{ok:false,error:'Phương thức không hỗ trợ.'});
+  let body='',size=0,overLimit=false;
+  req.on('data',chunk=>{size+=chunk.length;if(size>65536){overLimit=true;body='';}else if(!overLimit)body+=chunk;});
+  req.on('end',()=>{
+    if(overLimit)return json(res,413,{ok:false,error:'Cấu hình vượt 64 KB.'});
     try {
-      c.close?.();
-    } catch {
-      /* ignore */
-    }
-  }
-  clients.clear();
-  log(`Áp dụng cấu hình: ${runtime.length} PLC đang bật`);
-}
-applyConfig(uiUnits);
-
-/* ---- đọc FINS ---- */
-function parseAddr(s) {
-  const m = String(s).trim().toUpperCase().match(/^(CIO|DM|D|WR|W|HR|H|AR|A)?\s*0*(\d+)(?:\.(\d{1,2}))?$/);
-  if (!m) throw new Error('Địa chỉ không hợp lệ: ' + s);
-  const area = { DM: 'D', WR: 'W', HR: 'H', AR: 'A' }[m[1]] || m[1] || 'CIO';
-  return { word: area + m[2], bit: m[3] != null ? Number(m[3]) : null };
-}
-function clientFor(u) {
-  let c = clients.get(u.id);
-  if (c) return c;
-  c = FinsClient(u.port ?? config.fins.port, u.host, {
-    protocol: u.protocol ?? 'tcp',
-    timeout: 2000,
+      const next=validateConfig(JSON.parse(body));
+      atomicSave(file,next); // validate and persist before replacing the working runtime
+      units=next;poller.configure(next);
+      json(res,200,{ok:true,count:next.filter(u=>u.enabled).length});
+    }catch(e){json(res,400,{ok:false,error:e.message});}
   });
-  c.on('error', (e) => log(`[${u.id}] FINS error:`, e?.message || e));
-  c.on('timeout', () => log(`[${u.id}] FINS timeout`));
-  clients.set(u.id, c);
-  return c;
-}
-function readWord(client, wordAddr) {
-  return new Promise((resolve, reject) => {
-    try {
-      client.read(wordAddr, 1, (err, msg) => {
-        if (err) return reject(err instanceof Error ? err : new Error(String(err)));
-        const v = msg?.response?.values ?? msg?.values ?? [];
-        resolve(Number(Array.isArray(v) ? v[0] : v) || 0);
-      });
-    } catch (e) {
-      reject(e);
-    }
-  });
-}
-async function readUnit(u) {
-  const c = clientFor(u);
-  try {
-    const fields = {};
-    for (const k of ['door', 'estop', 'online', 'fault']) if (u[k]) fields[k] = parseAddr(u[k]);
-    const countBits = Array.isArray(u.countBits) ? u.countBits.map(parseAddr) : [];
-    const words = [...new Set([...Object.values(fields).map((f) => f.word), ...countBits.map((f) => f.word)])];
-    const wv = {};
-    await Promise.all(words.map(async (w) => { wv[w] = await readWord(c, w); }));
-    const bit = (k, dflt) => {
-      const f = fields[k];
-      if (!f) return dflt;
-      return f.bit == null ? wv[f.word] : Boolean((wv[f.word] >> f.bit) & 1);
-    };
-    const count = countBits.reduce((n, f) => n + ((wv[f.word] >> f.bit) & 1), 0);
-    return { id: u.id, zone: u.zone, capacity: u.capacity, count, doorClosed: bit('door', true), estop: bit('estop', false), online: bit('online', true), fault: bit('fault', false) };
-  } catch (e) {
-    log(`[${u.id}] lỗi đọc:`, e.message);
-    try {
-      c.close?.();
-    } catch {
-      /* ignore */
-    }
-    clients.delete(u.id);
-    return { id: u.id, zone: u.zone, capacity: u.capacity, count: 0, doorClosed: false, estop: false, online: false, fault: false };
-  }
-}
-/* ---- MOCK: sinh số giả để test không cần PLC ---- */
-const mockState = new Map();
-function readUnitMock(u) {
-  let s = mockState.get(u.id);
-  if (s == null) s = Math.floor(u.capacity * 0.5);
-  if (Math.random() < 0.4) s += Math.random() < 0.5 ? -1 : 1;
-  s = Math.max(0, Math.min(u.capacity, s));
-  mockState.set(u.id, s);
-  return {
-    id: u.id,
-    zone: u.zone,
-    capacity: u.capacity,
-    count: s,
-    doorClosed: true,
-    estop: false,
-    online: true,
-    fault: Math.random() < 0.03,
-  };
-}
-
-async function poll() {
-  if (!runtime.length) {
-    snapshot = { blocks: [], connected: false, at: Date.now() };
-    return broadcast();
-  }
-  const blocks = config.mock
-    ? runtime.map(readUnitMock)
-    : await Promise.all(runtime.map(readUnit));
-  snapshot = { blocks, connected: blocks.some((b) => b.online), at: Date.now() };
-  broadcast();
-}
-
-/* ---- HTTP (API cấu hình) + WebSocket (snapshot) trên cùng 1 cổng ---- */
-function cors(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-}
-const server = http.createServer((req, res) => {
-  cors(res);
-  if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
-  if (req.url === '/config' && req.method === 'GET') {
-    res.setHeader('Content-Type', 'application/json');
-    return res.end(JSON.stringify({
-      units: uiUnits,
-      presets: Object.entries(PRESETS).map(([key, v]) => ({ key, label: v.label, capacity: v.capacity })),
-      ipPattern: '192.169.1.(100+N)',
-    }));
-  }
-  if (req.url === '/config' && req.method === 'PUT') {
-    let body = '';
-    req.on('data', (d) => (body += d));
-    req.on('end', () => {
-      try {
-        const list = JSON.parse(body);
-        if (!Array.isArray(list)) throw new Error('config phải là mảng');
-        saveConfig(list);
-        applyConfig(list);
-        res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ ok: true, count: runtime.length }));
-      } catch (e) {
-        res.writeHead(400);
-        res.end(JSON.stringify({ ok: false, error: e.message }));
-      }
-    });
-    return;
-  }
-  res.setHeader('Content-Type', 'text/plain');
-  res.end('TotalParking FINS gateway');
 });
-const wss = new WebSocketServer({ server });
-wss.on('connection', (ws) => {
-  log('Web app đã kết nối');
+const wss=new WebSocketServer({noServer:true,maxPayload:65536});
+server.on('upgrade',(req,socket,head)=>{
+  if(!originAllowed(req)){socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');return;}
+  wss.handleUpgrade(req,socket,head,ws=>wss.emit('connection',ws,req));
+});
+wss.on('connection',ws=>{
   ws.send(JSON.stringify(snapshot));
+  ws.on('message',raw=>{
+    let id=null;try{id=JSON.parse(String(raw)).id??null}catch{}
+    ws.send(JSON.stringify({type:'write-result',id,ok:false,reason:'Gateway chỉ đọc; chưa hỗ trợ điều khiển PLC.'}));
+  });
 });
-function broadcast() {
-  const msg = JSON.stringify(snapshot);
-  for (const c of wss.clients) if (c.readyState === 1) c.send(msg);
-}
-
-server.listen(config.wsPort, () => {
-  log(`FINS multi-gateway: HTTP+WS cổng ${config.wsPort} — ${runtime.length} PLC (từ units.json)`);
+poller.configure(units);
+let timer;
+async function loop(){await poller.poll();if(!poller.stopped)timer=setTimeout(loop,config.pollMs);}
+server.listen(config.wsPort,config.bindHost,()=>{
+  console.log(`Gateway ${config.mock?'MOCK':'PLC'} CHỈ ĐỌC: http://${config.bindHost}:${config.wsPort}`);
+  if(!config.adminToken)console.log('API cấu hình đang khóa: chưa đặt GATEWAY_ADMIN_TOKEN.');
+  void loop();
 });
-setInterval(poll, config.pollMs);
+function stop(){clearTimeout(timer);poller.stop();for(const c of wss.clients)c.close();wss.close();server.close();}
+process.on('SIGINT',stop);process.on('SIGTERM',stop);

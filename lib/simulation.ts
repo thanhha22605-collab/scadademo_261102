@@ -1,6 +1,19 @@
 export type VType = 'SUV' | 'Sedan';
 export type Mode = 'Auto' | 'Manual' | 'Maint' | 'EStop';
+export type Quality = 'good' | 'stale' | 'unknown';
 export type Block = {
+  name?: string;
+  online: boolean;
+  fault: boolean;
+  maintenance: boolean;
+  jammed: boolean;
+  quality: Quality;
+  photogateClear: boolean;
+  limitOk: boolean;
+  overloadOk: boolean;
+  bypassed: string[];
+  occupancy?: (boolean | null)[];
+  reportedCount?: number | null;
   id: string;
   zone: string;
   capacity: number;
@@ -27,6 +40,8 @@ export type Job = {
 };
 export type Log = { id: number; time: string; block: string; text: string };
 export type Alarm = {
+  active?: boolean;
+  resolvedAt?: string;
   id: string;
   block: string;
   text: string;
@@ -39,6 +54,7 @@ export type Alarm = {
   at?: string;
 };
 export type Bypass = {
+  expiresAt: number;
   id: number;
   device: string;
   block: string;
@@ -47,6 +63,10 @@ export type Bypass = {
   at: string;
 };
 export type Sim = {
+  clockMs: number;
+  source: 'sim' | 'plc' | 'mock';
+  connection: 'loading' | 'online' | 'stale' | 'offline';
+  updatedAt: number | null;
   blocks: Block[];
   jobs: Job[];
   logs: Log[];
@@ -117,6 +137,9 @@ export function createSim(): Sim {
     }
     return {
       ...b,
+      online: b.state !== 'Offline', fault: b.state === 'Lỗi' || b.id === 'B-03',
+      maintenance: b.state === 'Bảo trì', jammed:false, quality:'good',
+      photogateClear:true, limitOk:true, overloadOk:true, bypassed:[],
       mode: modeOf(b.id),
       doorClosed: b.id !== 'A-03',
       estop: b.id === 'A-04',
@@ -129,7 +152,8 @@ export function createSim(): Sim {
   });
   const a03 = blocks.find((b) => b.id === 'A-03')!;
   return {
-    blocks,
+    clockMs:Date.now(), source:'sim', connection:'online', updatedAt:null,
+    blocks:blocks.map(refreshBlock),
     jobs: [
       {
         id: 1,
@@ -291,7 +315,7 @@ export function createSim(): Sim {
         ack: true,
       },
       {
-        id: 'OP-0309',
+        id: 'OP-0309', active:false,
         block: 'A-03',
         cat: 'operator',
         sev: 'Trung bình',
@@ -303,52 +327,52 @@ export function createSim(): Sim {
         ack: true,
       },
     ],
-    bypasses: [
-      {
-        id: 6,
-        device: 'LS-T3 - Cảm biến hành trình',
-        block: 'B-04',
-        timeout: 30,
-        reason: 'Bảo trì cơ khí định kỳ, cảm biến báo lỗi giả.',
-        at: '08:10:00',
-      },
-    ],
+    bypasses: [],
     nextId: 7,
   };
 }
 export function active(j: Job) {
   return j.status === 'Chờ xử lý' || j.status === 'Đang chạy';
 }
+export function refreshBlock(b: Block): Block {
+  b.forced=b.bypassed.length>0;
+  b.state=!b.online?'Offline':b.fault||b.jammed?'Lỗi':b.maintenance?'Bảo trì':b.estop||!b.doorClosed||!b.photogateClear||!b.limitOk||!b.overloadOk?'Cảnh báo':'Bình thường';
+  return b;
+}
 export function blocked(b: Block) {
-  if (b.estop) return 'Dừng khẩn cấp';
-  if (b.state === 'Offline') return 'Mất kết nối';
-  if (!b.forced) {
-    if (!b.doorClosed) return 'Cửa chưa đóng';
-    if (b.state === 'Lỗi') return 'Sự cố thiết bị';
-  }
-  if (b.state === 'Bảo trì') return 'Đang bảo trì';
-  if (b.locked) return 'Block đã khóa';
-  if (b.paused) return 'Tạm dừng';
+  if(b.estop)return 'Dừng khẩn cấp';
+  if(!b.online)return 'Mất kết nối';
+  if(b.quality!=='good')return 'Dữ liệu chưa xác nhận';
+  if(!b.doorClosed)return 'Cửa chưa đóng';
+  if(b.fault)return 'Sự cố thiết bị';
+  if(b.jammed)return 'Kẹt cơ cấu';
+  if(b.maintenance)return 'Đang bảo trì';
+  if(b.locked)return 'Block đã khóa';
+  if(b.paused)return 'Tạm dừng';
+  if(!b.photogateClear&&!b.bypassed.includes('Photogate - Cảm biến an toàn'))return 'Vật cản tại Photogate';
+  if(!b.limitOk&&!b.bypassed.includes('LS-T3 - Cảm biến hành trình'))return 'Lỗi cảm biến hành trình';
+  if(!b.overloadOk&&!b.bypassed.includes('Lift Motor - Quá tải động cơ nâng'))return 'Quá tải động cơ';
   return '';
 }
-export function status(b: Block, s: Sim) {
-  if (b.state === 'Offline') return 'Offline';
-  if (b.state === 'Bảo trì') return 'Bảo trì';
-  if (b.state === 'Lỗi') return 'Lỗi';
-  if (s.jobs.some((j) => j.block === b.id && j.status === 'Đang chạy'))
-    return 'Đang chạy';
-  if (
-    b.estop ||
-    !b.doorClosed ||
-    b.paused ||
-    b.locked ||
-    b.state === 'Cảnh báo'
-  )
-    return 'Cảnh báo';
-  return 'Bình thường';
+export function status(b: Block,s:Sim) {
+  const reason=blocked(b);if(reason)return reason;
+  const job=s.jobs.find(j=>j.block===b.id&&j.status==='Đang chạy');
+  return job?.hold?'Đang giữ lệnh':job?'Đang chạy':'Bình thường';
 }
+export function isActiveAlarm(a:Alarm){return a.active!==false;}
+export function occupancyOf(b:Block):(boolean|null)[]{return b.occupancy??b.slots.map(Boolean);}
+export function countOf(b:Block):number|null{return b.reportedCount===undefined?b.slots.filter(Boolean).length:b.reportedCount;}
+export function availableOf(b:Block,s:Sim){return blocked(b)?0:occupancyOf(b).filter((p,i)=>p===false&&!s.jobs.some(j=>active(j)&&j.block===b.id&&j.slot===i)).length;}
+export function summary(s:Sim){
+ const capacity=s.blocks.reduce((n,b)=>n+b.capacity,0);
+ const total=s.blocks.reduce((n,b)=>n+(countOf(b)??0),0);
+ const suv=s.blocks.reduce((n,b)=>n+b.kinds.filter(k=>k==='SUV').length,0);
+ const sedan=s.blocks.reduce((n,b)=>n+b.kinds.filter(k=>k==='Sedan').length,0);
+ return {capacity,total,suv,sedan,unclassified:total-suv-sedan,available:s.blocks.reduce((n,b)=>n+availableOf(b,s),0),unknown:s.blocks.some(b=>countOf(b)===null||b.quality!=='good'),zones:[...new Set(s.blocks.map(b=>b.zone))]};
+}
+export const percent=(n:number,d:number)=>d>0?Math.round(n/d*100):0;
 export type Action =
-  | { type: 'tick'; time: string }
+  | { type: 'tick'; time: string; nowMs?: number }
   | { type: 'load'; sim: Sim }
   | {
       type: 'dispatch';
@@ -364,7 +388,7 @@ export type Action =
   | {
       type: 'toggle';
       block: string;
-      field: 'doorClosed' | 'estop' | 'paused' | 'maintenance' | 'online';
+      field: 'doorClosed' | 'estop' | 'paused' | 'maintenance' | 'online' | 'photogateClear' | 'limitOk' | 'overloadOk';
       time: string;
     }
   | { type: 'mode'; block: string; mode: Mode; time: string }
@@ -389,6 +413,7 @@ export function validateDispatch(
   s: Sim,
   a: { block: string; slot: number; plate: string; kind: 'in' | 'out' },
 ): string {
+  if(s.source!=='sim')return 'Nguồn PLC chỉ đọc, không hỗ trợ điều phối.';
   const b = s.blocks.find((b) => b.id === a.block);
   if (!b) return 'Block không tồn tại.';
   if (blocked(b)) return `Không thể gửi lệnh: ${blocked(b)}.`;
@@ -425,7 +450,19 @@ const cmdLabel: Record<string, string> = {
 };
 export function reduceSim(state: Sim, a: Action): Sim {
   // Nạp trọn snapshot (dùng khi đọc dữ liệu thật từ PLC qua gateway).
-  if (a.type === 'load') return a.sim;
+  if (a.type === 'load') {
+    const next=structuredClone(a.sim);
+    next.logs=state.logs;
+    next.nextId=state.nextId;
+    next.alarms=next.alarms.map(alarm=>{
+      const previous=state.alarms.find(x=>x.id===alarm.id&&isActiveAlarm(x));
+      return previous?{...alarm,ack:previous.ack,ackBy:previous.ackBy,at:previous.at}:alarm;
+    });
+    const resolved=state.alarms.filter(x=>isActiveAlarm(x)&&!next.alarms.some(a=>a.id===x.id)).map(x=>({...x,active:false}));
+    next.alarms=[...next.alarms,...resolved,...state.alarms.filter(x=>!isActiveAlarm(x)&&!next.alarms.some(a=>a.id===x.id))].slice(0,500);
+    return next;
+  }
+  if(state.source!=='sim'&&a.type!=='ack')return state;
   if (a.type === 'dispatch' && validateDispatch(state, a)) return state;
   const s: Sim = structuredClone(state);
   const log = (block: string, text: string) => {
@@ -440,9 +477,9 @@ export function reduceSim(state: Sim, a: Action): Sim {
       extra: Partial<Alarm> = {},
     ) => {
       if (on) {
-        if (!s.alarms.some((x) => x.id === id))
-          s.alarms.unshift({ id, block: b.id, text, ack: false, ...extra });
-      } else s.alarms = s.alarms.filter((x) => x.id !== id);
+        if (!s.alarms.some((x) => x.id === id && isActiveAlarm(x)))
+          {s.alarms=s.alarms.filter(x=>x.id!==id);s.alarms.unshift({ id, block: b.id, text, ack: false, active:true, at:a.time,...extra });}
+      } else s.alarms = s.alarms.map(x=>x.id===id?{...x,active:false,resolvedAt:a.time}:x);
     };
     sync(
       `DOOR-${b.id}`,
@@ -458,7 +495,7 @@ export function reduceSim(state: Sim, a: Action): Sim {
     });
     sync(
       `LINK-${b.id}`,
-      b.state === 'Offline',
+      !b.online,
       'Mất kết nối bộ điều khiển mô phỏng.',
       { cat: 'system', sev: 'Cao', code: 'E-0901', device: 'PLC-Link' },
     );
@@ -484,15 +521,15 @@ export function reduceSim(state: Sim, a: Action): Sim {
     );
   }
   if (a.type === 'tick') {
+    s.clockMs=Math.max(s.clockMs,a.nowMs??s.clockMs+1000);
+    for(const expired of s.bypasses.filter(x=>x.expiresAt<=s.clockMs))log(expired.block,'Bypass hết hạn: '+expired.device);
+    s.bypasses=s.bypasses.filter(x=>x.expiresAt>s.clockMs);
+    for(const b of s.blocks){b.bypassed=s.bypasses.filter(x=>x.block===b.id).map(x=>x.device);refreshBlock(b);}
     for (const b of s.blocks) {
       if (blocked(b)) continue;
-      const j = s.jobs
-        .filter((j) => j.block === b.id && active(j) && !j.hold)
-        .sort((x, y) => {
-          if (x.priority !== y.priority) return x.priority === 'VIP' ? -1 : 1;
-          return x.id - y.id;
-        })[0];
-      if (!j) continue;
+      const running=s.jobs.find(j=>j.block===b.id&&j.status==='Đang chạy');
+      const j=running??s.jobs.filter(j=>j.block===b.id&&j.status==='Chờ xử lý'&&!j.hold).sort((x,y)=>(x.priority===y.priority?0:x.priority==='VIP'?-1:1)||x.id-y.id)[0];
+      if(!j||j.hold)continue;
       if (j.status === 'Chờ xử lý') {
         j.status = 'Đang chạy';
         log(b.id, `Bắt đầu ${j.kind === 'in' ? 'nhập' : 'xuất'} xe ${j.plate}`);
@@ -524,91 +561,47 @@ export function reduceSim(state: Sim, a: Action): Sim {
       log(alarm.block, `Xác nhận cảnh báo ${alarm.id}`);
     }
   }
-  if (a.type === 'toggle') {
-    const b = s.blocks.find((b) => b.id === a.block);
-    if (!b) return state;
-    if (a.field === 'maintenance') {
-      if (s.jobs.some((j) => j.block === b.id && active(j))) return state;
-      b.state = b.state === 'Bảo trì' ? 'Bình thường' : 'Bảo trì';
-      b.mode = b.state === 'Bảo trì' ? 'Maint' : 'Auto';
-    } else if (a.field === 'online')
-      b.state = b.state === 'Offline' ? 'Bình thường' : 'Offline';
-    else b[a.field] = !b[a.field];
-    if (a.field === 'estop') b.mode = b.estop ? 'EStop' : 'Auto';
-    syncAlarms(b);
-    log(
-      b.id,
-      `${a.field === 'doorClosed' ? 'Cửa an toàn' : a.field === 'estop' ? 'Dừng khẩn cấp' : a.field === 'paused' ? 'Tạm dừng' : a.field === 'maintenance' ? 'Chế độ bảo trì' : 'Kết nối'}: ${a.field === 'maintenance' || a.field === 'online' ? b.state : b[a.field] ? 'Bật' : 'Tắt'}`,
-    );
+  if(a.type==='toggle'){
+    const b=s.blocks.find(b=>b.id===a.block);if(!b)return state;
+    if(a.field==='maintenance'){
+      if(s.jobs.some(j=>j.block===b.id&&active(j)))return state;
+      b.maintenance=!b.maintenance;if(!b.estop)b.mode=b.maintenance?'Maint':'Auto';
+    }else {b[a.field]=!b[a.field];if(a.field==='estop')b.mode=b.estop?'EStop':b.maintenance?'Maint':'Auto';}
+    refreshBlock(b);syncAlarms(b);log(b.id,'Thay đổi tín hiệu '+a.field);
   }
-  if (a.type === 'mode') {
-    const b = s.blocks.find((b) => b.id === a.block);
-    if (!b) return state;
-    if (a.mode === 'Maint' && s.jobs.some((j) => j.block === b.id && active(j)))
-      return state;
-    b.mode = a.mode;
-    b.estop = a.mode === 'EStop';
-    if (a.mode === 'Maint') b.state = 'Bảo trì';
-    else if (b.state === 'Bảo trì') b.state = 'Bình thường';
-    syncAlarms(b);
-    log(b.id, `Chuyển chế độ vận hành: ${a.mode.toUpperCase()}`);
+  if(a.type==='mode'){
+    const b=s.blocks.find(b=>b.id===a.block);if(!b)return state;
+    if(a.mode==='Maint'&&s.jobs.some(j=>j.block===b.id&&active(j)))return state;
+    if(b.estop&&a.mode!=='EStop'){log(b.id,'Từ chối đổi mode: cần nhả E-STOP trước.');return s;}
+    b.mode=a.mode;if(a.mode==='EStop')b.estop=true;else b.maintenance=a.mode==='Maint';
+    refreshBlock(b);syncAlarms(b);log(b.id,'Chuyển mode '+a.mode);
   }
-  if (a.type === 'command') {
-    const b = s.blocks.find((b) => b.id === a.block);
-    if (!b) return state;
-    if (a.cmd === 'START' || a.cmd === 'RESUME') b.paused = false;
-    else if (a.cmd === 'STOP' || a.cmd === 'PAUSE') b.paused = true;
-    else if (a.cmd === 'LOCK') b.locked = true;
-    else if (a.cmd === 'UNLOCK') b.locked = false;
-    else if (a.cmd === 'FORCE') b.forced = !b.forced;
-    else if (a.cmd === 'DISABLE_MAINT') {
-      if (b.state === 'Bảo trì' && !s.jobs.some((j) => j.block === b.id && active(j))) {
-        b.state = 'Bình thường';
-        b.mode = 'Auto';
-      }
-    } else if (a.cmd === 'SIM_FAULT') {
-      if (b.state === 'Lỗi') {
-        b.state = 'Bình thường';
-        s.alarms = s.alarms.filter((x) => x.id !== `FAULT-${b.id}`);
-      } else {
-        b.state = 'Lỗi';
-        if (!s.alarms.some((x) => x.id === `FAULT-${b.id}`))
-          s.alarms.unshift({
-            id: `FAULT-${b.id}`,
-            block: b.id,
-            cat: 'system',
-            sev: 'Nghiêm trọng',
-            code: 'E-0410',
-            device: 'Motor-Lift',
-            at: a.time.slice(-8),
-            text: 'Giả lập lỗi thiết bị nâng hạ - cần kiểm tra.',
-            ack: false,
-          });
-      }
-    } else if (a.cmd === 'SIM_JAM') {
-      b.paused = true;
-      if (!s.alarms.some((x) => x.id === `JAM-${b.id}`))
-        s.alarms.unshift({
-          id: `JAM-${b.id}`,
-          block: b.id,
-          cat: 'system',
-          sev: 'Cao',
-          code: 'E-0412',
-          device: 'Slide-Runner',
-          at: a.time.slice(-8),
-          text: 'Giả lập kẹt cơ cấu trượt ngang - dừng an toàn.',
-          ack: false,
-        });
-    }
-    log(b.id, cmdLabel[a.cmd] ?? a.cmd);
+  if(a.type==='command'){
+    const b=s.blocks.find(b=>b.id===a.block);if(!b)return state;
+    if(a.cmd==='START'||a.cmd==='RESUME')b.paused=false;
+    else if(a.cmd==='STOP'||a.cmd==='PAUSE')b.paused=true;
+    else if(a.cmd==='LOCK')b.locked=true;
+    else if(a.cmd==='UNLOCK')b.locked=false;
+    else if(a.cmd==='DISABLE_MAINT'){b.maintenance=false;if(!b.estop)b.mode='Auto';}
+    else if(a.cmd==='SIM_FAULT'){
+      b.fault=!b.fault;
+      if(!b.fault)s.alarms=s.alarms.map(x=>x.block===b.id&&x.cat==='system'&&x.device!=='PLC-Link'&&x.device!=='AI-VDS'?{...x,active:false,resolvedAt:a.time}:x);
+      else s.alarms.unshift({id:'FAULT-'+b.id,block:b.id,cat:'system',sev:'Nghiêm trọng',text:'Lỗi thiết bị mô phỏng.',active:true,ack:false,at:a.time});
+    }else if(a.cmd==='SIM_JAM'){b.jammed=!b.jammed;if(b.jammed)s.alarms.unshift({id:'JAM-'+b.id,block:b.id,cat:'system',sev:'Cao',text:'Kẹt cơ cấu mô phỏng.',active:true,ack:false,at:a.time});else s.alarms=s.alarms.map(x=>x.id==='JAM-'+b.id?{...x,active:false}:x);}
+    else if(a.cmd==='FORCE'){log(b.id,'Dùng Bypass theo từng cảm biến có thời hạn tại Safety Interlock.');return s;}
+    else if(a.cmd!=='PLC')return state;
+    refreshBlock(b);syncAlarms(b);log(b.id,cmdLabel[a.cmd]??a.cmd);
   }
   if (a.type === 'bypass') {
-    if (a.op === 'add' && a.device && a.block && a.reason) {
+    if(a.op==='add'&&a.device&&a.block&&a.reason?.trim()){
+      if(!s.blocks.some(b=>b.id===a.block)||!['Photogate - Cảm biến an toàn','LS-T3 - Cảm biến hành trình','Lift Motor - Quá tải động cơ nâng'].includes(a.device)||![5,15,30,60].includes(a.timeout??15))return state;
+      s.bypasses=s.bypasses.filter(x=>!(x.block===a.block&&x.device===a.device));
       s.bypasses.unshift({
         id: s.nextId++,
         device: a.device,
         block: a.block,
         timeout: a.timeout ?? 15,
+        expiresAt:s.clockMs+(a.timeout??15)*60000,
         reason: a.reason,
         at: a.time.slice(-8),
       });
@@ -621,7 +614,7 @@ export function reduceSim(state: Sim, a: Action): Sim {
   }
   if (a.type === 'queue') {
     const j = s.jobs.find((j) => j.id === a.id);
-    if (!j) return state;
+    if (!j||!active(j)) return state;
     if (a.op === 'vip') {
       j.priority = 'VIP';
       log(j.block, `Nâng ưu tiên VIP lệnh #${j.id} · ${j.plate}`);
@@ -631,10 +624,11 @@ export function reduceSim(state: Sim, a: Action): Sim {
     } else if (a.op === 'resume') {
       j.hold = false;
       log(j.block, `Tiếp tục lệnh #${j.id} · ${j.plate}`);
-    } else if (a.op === 'reject' && active(j)) {
+    } else if (a.op === 'reject' && j.status==='Chờ xử lý') {
       j.status = 'Đã hủy';
       log(j.block, `Từ chối lệnh #${j.id} · ${j.plate}`);
     }
   }
+  for(const b of s.blocks){b.bypassed=s.bypasses.filter(x=>x.block===b.id&&x.expiresAt>s.clockMs).map(x=>x.device);refreshBlock(b);}
   return s;
 }
