@@ -22,10 +22,15 @@
  * countBits cho mỗi LOẠI, rồi các block cùng loại dùng lại, chỉ đổi id + host.
  * ============================================================= */
 
-// Danh sách bit 车位 theo TỪNG LOẠI tháp (sinh bằng gen-countbits.mjs):
+// Danh sách bit 车位 theo TỪNG LOẠI tháp (đọc từ section TRANG_THAI_PALLET).
 const COUNTBITS = {
-  // loai_10: ['W1.12','W1.13', ...],
-  // loai_16: ['W1.12','W1.13', ...],
+  // Loại +2/-1, 16 chỗ (đọc trực tiếp từ ladder 16车位 V1.3):
+  loai_16: [
+    'W8.00', 'W8.01', 'W8.02', 'W8.03', 'W8.04', 'W8.05', // Hầm B1: 001,002,003,011,012,013
+    'W2.12', 'W2.13', 'W1.13', 'W1.14', // Tầng 1: 102,103,112,113
+    'W4.12', 'W4.13', 'W4.14', 'W3.13', 'W3.14', 'W3.15', // Tầng 2: 201,202,203,211,212,213
+  ],
+  // loai_10: [...],  // mở TRANG_THAI_PALLET của .cxp 10 chỗ rồi điền tương tự
 };
 // Tiện dụng: IP theo số block
 const plc = (n) => `192.169.1.${100 + n}`;
