@@ -15,37 +15,44 @@
  * (đếm số bit ON = số xe). Sinh danh sách bằng:
  *   node gen-countbits.mjs symbols.txt
  * rồi dán mảng vào `countBits` của tháp đó. Nhớ đối chiếu tổng với số HMI.
+ *
+ * IP PLC (theo sơ đồ mạng): Block N = 192.169.1.(100+N)
+ *   Block 1 -> 192.169.1.101, Block 2 -> .102, … Cổng FINS = 9600.
+ * Các tháp KHÁC LOẠI (mỗi loại 1 .cxp) sẽ có countBits khác nhau — làm 1
+ * countBits cho mỗi LOẠI, rồi các block cùng loại dùng lại, chỉ đổi id + host.
  * ============================================================= */
+
+// Danh sách bit 车位 theo TỪNG LOẠI tháp (sinh bằng gen-countbits.mjs):
+const COUNTBITS = {
+  // loai_10: ['W1.12','W1.13', ...],
+  // loai_16: ['W1.12','W1.13', ...],
+};
+// Tiện dụng: IP theo số block
+const plc = (n) => `192.169.1.${100 + n}`;
+
 export const UNITS = [
   {
-    id: 'Tháp 1', // tên hiển thị trên SCADA
+    id: 'Block 1',
     zone: 'A',
-    host: '192.168.250.11', // IP PLC tháp 1
+    host: plc(1), // 192.169.1.101
     port: 9600,
     protocol: 'tcp',
-    capacity: 40, // tổng số chỗ của tháp (bằng số phần tử countBits)
+    capacity: 10, // = số phần tử countBits của loại này
     estop: 'W0.00',
     fault: 'W15.07',
-    // door: 'W1.08',   // ứng viên: 栅栏门下限位 — xác nhận trước khi bật
-    countBits: [
-      // dán từ gen-countbits.mjs, ví dụ:
-      'W1.12', 'W1.13', 'W1.14', 'W1.15',
-      'W2.12', 'W2.13', 'W2.14', 'W2.15',
-      // … đầy đủ các bit 车位 của tháp này …
-    ],
+    // door: 'W1.08',   // 栅栏门下限位 — XÁC NHẬN bằng check.mjs trước khi bật
+    countBits: COUNTBITS.loai_10 ?? [],
   },
   {
-    id: 'Tháp 2',
+    id: 'Block 2',
     zone: 'A',
-    host: '192.168.250.12',
+    host: plc(2), // 192.169.1.102
     port: 9600,
     protocol: 'tcp',
-    capacity: 40,
+    capacity: 16,
     estop: 'W0.00',
     fault: 'W15.07',
-    countBits: [
-      // … bit 车位 của tháp 2 …
-    ],
+    countBits: COUNTBITS.loai_16 ?? [],
   },
-  // … thêm mỗi tháp 1 khối, chủ yếu đổi id + host (+ countBits nếu khác).
+  // … thêm mỗi block 1 khối: đổi host: plc(N) + countBits theo LOẠI.
 ];
