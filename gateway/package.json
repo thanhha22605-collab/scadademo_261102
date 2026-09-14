@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "modbus-serial": "^8.0.17",
-    "omron-fins": "^2.1.0",
+    "omron-fins": "^0.5.0",
     "ws": "^8.18.0"
   }
 }

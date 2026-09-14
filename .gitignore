@@ -43,6 +43,7 @@ next-env.d.ts
 
 # gateway: cấu hình PLC thật (giữ bí mật IP)
 gateway/units.mjs
+gateway/units.json
 
 # file PLC/HMI nhị phân của hãng (không versioning)
 codePLC_TASECO/

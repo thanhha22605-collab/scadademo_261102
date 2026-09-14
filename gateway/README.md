@@ -64,14 +64,31 @@ register cho số xe.
 > Cả ba bản (Modbus, FINS, FINS-multi) đều phát cùng một định dạng snapshot nên
 > web app không phải sửa gì.
 
-## 1C. Nhiều PLC / nhiều cụm (FINS-multi)
+## 1C. Nhiều PLC / nhiều cụm (FINS-multi) — khuyến nghị TASECO
 
-Thực địa có nhiều cụm puzzle/comb, mỗi cụm là 1 PLC CP2E riêng:
+Thực địa có nhiều tháp puzzle/comb, mỗi tháp là 1 PLC CP2E riêng. Không cần
+sửa code: khai báo từng tháp ngay trong SCADA (tab **Cấu hình PLC**) — chọn
+loại tháp (đã map sẵn số xe/E‑Stop/lỗi), nhập số Block N → IP tự suy
+`192.169.1.(100+N)`. Gateway lưu vào `units.json` và kết nối lại ngay.
 
 ```bash
-cp units.example.mjs units.mjs   # điền IP + địa chỉ D từng cụm
-npm run start:omron-multi
+npm install
+npm run start:omron-multi     # HTTP API cấu hình + WS snapshot trên cổng 8081
 ```
+
+API: `GET /config` (trả units + presets), `PUT /config` (mảng units, lưu + áp dụng).
+
+### Test bằng dữ liệu giả (không cần PLC)
+
+Để thử API/giao diện khi chưa nối được PLC, chạy ở chế độ MOCK — gateway sinh
+số xe ngẫu nhiên (dao động mỗi chu kỳ, thỉnh thoảng báo lỗi) cho các tháp đang bật:
+
+```bash
+MOCK=true npm run start:omron-multi
+```
+
+Sau đó vẫn thêm/sửa tháp ở tab **Cấu hình PLC** như bình thường; Dashboard sẽ
+thấy số xe từng tháp thay đổi. Bỏ `MOCK` để đọc PLC thật.
 
 ## Lấy đúng địa chỉ PLC
 

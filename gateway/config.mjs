@@ -15,6 +15,7 @@ export const config = {
   },
   pollMs: Number(process.env.POLL_MS || 500), // chu kỳ đọc PLC (ms)
   wsPort: Number(process.env.WS_PORT || 8081), // cổng WebSocket phát cho web app
+  mock: process.env.MOCK === 'true', // MOCK=true: sinh số giả để test, KHÔNG nối PLC
   // GHI XUỐNG PLC rất nguy hiểm — mặc định TẮT.
   allowWrites: process.env.ALLOW_WRITES === 'true',
 };

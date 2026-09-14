@@ -105,12 +105,34 @@ async function readUnit(u) {
     return { id: u.id, zone: u.zone, capacity: u.capacity, count: 0, doorClosed: false, estop: false, online: false, fault: false };
   }
 }
+/* ---- MOCK: sinh số giả để test không cần PLC ---- */
+const mockState = new Map();
+function readUnitMock(u) {
+  let s = mockState.get(u.id);
+  if (s == null) s = Math.floor(u.capacity * 0.5);
+  if (Math.random() < 0.4) s += Math.random() < 0.5 ? -1 : 1;
+  s = Math.max(0, Math.min(u.capacity, s));
+  mockState.set(u.id, s);
+  return {
+    id: u.id,
+    zone: u.zone,
+    capacity: u.capacity,
+    count: s,
+    doorClosed: true,
+    estop: false,
+    online: true,
+    fault: Math.random() < 0.03,
+  };
+}
+
 async function poll() {
   if (!runtime.length) {
     snapshot = { blocks: [], connected: false, at: Date.now() };
     return broadcast();
   }
-  const blocks = await Promise.all(runtime.map(readUnit));
+  const blocks = config.mock
+    ? runtime.map(readUnitMock)
+    : await Promise.all(runtime.map(readUnit));
   snapshot = { blocks, connected: blocks.some((b) => b.online), at: Date.now() };
   broadcast();
 }
