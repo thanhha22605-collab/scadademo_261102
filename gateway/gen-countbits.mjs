@@ -18,6 +18,8 @@ const buf = fs.readFileSync(file);
 const latin = buf.toString('latin1').split(/\r?\n/);
 const utf8 = buf.toString('utf8').split(/\r?\n/);
 const KW = kwArg ? [kwArg] : ['车位', '³µÎ»'];
+// bỏ qua bit TỔNG theo tầng (X层车位) để tránh đếm trùng — chỉ giữ chỗ có số
+const SKIP = ['层车位', '²ã³µÎ»'];
 const addrRx = /\b(W|H|A|CIO|D)0*(\d+)\.(\d{1,2})\b/i;
 
 const seen = new Set();
@@ -25,6 +27,7 @@ const out = [];
 for (let i = 0; i < latin.length; i++) {
   const hay = latin[i] + ' ' + (utf8[i] || '');
   if (!KW.some((k) => hay.includes(k))) continue;
+  if (SKIP.some((k) => hay.includes(k))) continue;
   const m = latin[i].match(addrRx);
   if (!m) continue;
   const a = m[1].toUpperCase() + m[2] + '.' + m[3].padStart(2, '0');
