@@ -2,17 +2,31 @@
 import { useEffect, useState } from 'react';
 import { Plus, RefreshCw, Save, Server, Trash2 } from 'lucide-react';
 import { Panel, Badge, type ScreenProps } from './shared';
-import { GATEWAY_HTTP } from './datasource';
+import { GATEWAY_HTTP, GATEWAY_TOKEN } from './datasource';
 
 type UnitCfg = {
+  id: string;
   n: number | string;
   name: string;
   type: string;
   door: string;
   zone: string;
   enabled: boolean;
+  host?: string;
+  port?: number;
+  protocol?: string;
 };
 type Preset = { key: string; label: string; capacity: number };
+
+/* ID bất biến cho mỗi PLC — KHÔNG suy từ tên/số hàng (tránh trùng khi xóa/chèn). */
+const newId = () =>
+  'u' +
+  (globalThis.crypto?.randomUUID?.().replace(/-/g, '') ?? Math.random().toString(36).slice(2)).slice(0, 12);
+const authHeaders: Record<string, string> = GATEWAY_TOKEN
+  ? { Authorization: 'Bearer ' + GATEWAY_TOKEN }
+  : {};
+const nextN = (list: UnitCfg[]) =>
+  list.reduce((m, u) => Math.max(m, Number(u.n) || 0), 0) + 1;
 
 /* Preset dự phòng khi chưa nối gateway (để demo dropdown vẫn dùng được). */
 const PRESET_FALLBACK: Preset[] = [
@@ -28,24 +42,28 @@ const DRAFT = 'tp_plc_config_draft';
 export default function PlcConfig(_: ScreenProps) {
   const [presets, setPresets] = useState<Preset[]>(PRESET_FALLBACK);
   const [units, setUnits] = useState<UnitCfg[]>([]);
-  const [status, setStatus] = useState<'loading' | 'online' | 'offline'>('loading');
+  const [status, setStatus] = useState<'loading' | 'online' | 'offline' | 'unauthorized'>('loading');
   const [note, setNote] = useState('');
 
   useEffect(() => {
     const ac = new AbortController();
     const t = setTimeout(() => ac.abort(), 2500);
-    fetch(GATEWAY_HTTP + '/config', { signal: ac.signal })
-      .then((r) => r.json() as Promise<{ presets?: Preset[]; units?: UnitCfg[] }>)
-      .then((d) => {
+    fetch(GATEWAY_HTTP + '/config', { signal: ac.signal, headers: authHeaders })
+      .then(async (r) => {
+        if (r.status === 401 || r.status === 403) {
+          setStatus('unauthorized');
+          return;
+        }
+        const d = (await r.json()) as { presets?: Preset[]; units?: UnitCfg[] };
         if (Array.isArray(d.presets) && d.presets.length) setPresets(d.presets);
-        setUnits(Array.isArray(d.units) ? d.units : []);
+        setUnits((Array.isArray(d.units) ? d.units : []).map((u) => ({ ...u, id: u.id || newId() })));
         setStatus('online');
       })
       .catch(() => {
         setStatus('offline');
         try {
           const draft = JSON.parse(localStorage.getItem(DRAFT) || '[]');
-          if (Array.isArray(draft)) setUnits(draft);
+          if (Array.isArray(draft)) setUnits(draft.map((u) => ({ ...u, id: u.id || newId() })));
         } catch {
           /* ignore */
         }
@@ -60,10 +78,13 @@ export default function PlcConfig(_: ScreenProps) {
   const patch = (i: number, k: keyof UnitCfg, v: unknown) =>
     setUnits((list) => list.map((u, j) => (j === i ? { ...u, [k]: v } : u)));
   const add = () =>
-    setUnits((list) => [
-      ...list,
-      { n: list.length + 1, name: `Block ${list.length + 1}`, type: presets[0]?.key ?? 'loai_16', door: 'W1.08', zone: 'A', enabled: true },
-    ]);
+    setUnits((list) => {
+      const n = nextN(list);
+      return [
+        ...list,
+        { id: newId(), n, name: `Block ${n}`, type: presets[0]?.key ?? 'loai_16', door: 'W1.08', zone: 'A', enabled: true },
+      ];
+    });
   const remove = (i: number) => setUnits((list) => list.filter((_, j) => j !== i));
 
   const save = async () => {
@@ -72,6 +93,10 @@ export default function PlcConfig(_: ScreenProps) {
     } catch {
       /* ignore */
     }
+    if (status === 'unauthorized') {
+      setNote('Gateway yêu cầu token quản trị. Đặt VITE_GATEWAY_TOKEN (khớp GATEWAY_ADMIN_TOKEN) rồi tải lại.');
+      return;
+    }
     if (status !== 'online') {
       setNote('Chưa nối gateway — đã lưu nháp trong trình duyệt. Sẽ áp dụng khi có gateway.');
       return;
@@ -79,9 +104,14 @@ export default function PlcConfig(_: ScreenProps) {
     try {
       const r = await fetch(GATEWAY_HTTP + '/config', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify(units),
       });
+      if (r.status === 401 || r.status === 403) {
+        setStatus('unauthorized');
+        setNote('Token quản trị không hợp lệ hoặc thiếu — gateway từ chối lưu cấu hình.');
+        return;
+      }
       const d = (await r.json()) as { ok?: boolean; count?: number; error?: string };
       setNote(d.ok ? `Đã lưu xuống gateway: ${d.count} PLC đang bật.` : 'Lỗi: ' + d.error);
     } catch (e) {
@@ -92,9 +122,25 @@ export default function PlcConfig(_: ScreenProps) {
   return (
     <>
       <div className="occ-badges">
-        <Badge tone={status === 'online' ? 'green' : status === 'offline' ? 'red' : 'amber'}>
+        <Badge
+          tone={
+            status === 'online'
+              ? 'green'
+              : status === 'offline'
+                ? 'red'
+                : status === 'unauthorized'
+                  ? 'red'
+                  : 'amber'
+          }
+        >
           <Server size={12} /> Gateway:{' '}
-          {status === 'online' ? 'Đã kết nối' : status === 'offline' ? 'Chưa kết nối' : 'Đang kiểm tra…'}
+          {status === 'online'
+            ? 'Đã kết nối'
+            : status === 'offline'
+              ? 'Chưa kết nối'
+              : status === 'unauthorized'
+                ? 'Cần token'
+                : 'Đang kiểm tra…'}
         </Badge>
         <span className="muted">{GATEWAY_HTTP}</span>
       </div>
@@ -103,10 +149,18 @@ export default function PlcConfig(_: ScreenProps) {
           {note}
         </div>
       )}
+      {status === 'unauthorized' && (
+        <div className="notice amber">
+          Gateway yêu cầu <b>token quản trị</b>. Chạy gateway với{' '}
+          <span className="mono">GATEWAY_ADMIN_TOKEN</span> (≥ 24 ký tự) và đặt cùng
+          giá trị vào <span className="mono">VITE_GATEWAY_TOKEN</span> khi build web
+          app, rồi tải lại trang. Không có token thì API cấu hình bị khóa.
+        </div>
+      )}
       {status === 'offline' && (
         <div className="notice amber">
           Chưa thấy gateway. Bạn vẫn thêm/sửa được (lưu nháp trong trình duyệt);
-          khi chạy gateway (`npm run start:omron-multi`) và đặt{' '}
+          khi chạy gateway (`npm start`) và đặt{' '}
           <span className="mono">VITE_DATA_SOURCE=plc</span> thì bấm Lưu để áp dụng.
         </div>
       )}
