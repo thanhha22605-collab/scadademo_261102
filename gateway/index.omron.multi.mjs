@@ -61,12 +61,19 @@ function readWord(client, wordAddr) {
 async function readUnit(u) {
   const c = clientFor(u);
   try {
-    // gom các tín hiệu có khai báo địa chỉ
+    // gom các tín hiệu đơn (door/estop/online/fault + count nếu là 1 word)
     const fields = {};
     for (const k of ['count', 'door', 'estop', 'online', 'fault'])
       if (u[k]) fields[k] = parseAddr(u[k]);
+    // countBits: đếm số bit ON = số xe (dùng cho PLC TASECO, mỗi chỗ 1 bit 车位)
+    const countBits = Array.isArray(u.countBits) ? u.countBits.map(parseAddr) : [];
     // đọc mỗi WORD cần thiết đúng 1 lần
-    const words = [...new Set(Object.values(fields).map((f) => f.word))];
+    const words = [
+      ...new Set([
+        ...Object.values(fields).map((f) => f.word),
+        ...countBits.map((f) => f.word),
+      ]),
+    ];
     const wv = {};
     await Promise.all(words.map(async (w) => { wv[w] = await readWord(c, w); }));
     const val = (k, dflt) => {
@@ -75,10 +82,13 @@ async function readUnit(u) {
       const w = wv[f.word];
       return f.bit == null ? w : Boolean((w >> f.bit) & 1);
     };
+    const count = countBits.length
+      ? countBits.reduce((n, f) => n + ((wv[f.word] >> f.bit) & 1), 0)
+      : val('count', 0);
     return {
       id: u.id,
       capacity: u.capacity,
-      count: val('count', 0),
+      count,
       doorClosed: val('door', true),
       estop: val('estop', false),
       online: val('online', true), // đọc được = coi như online

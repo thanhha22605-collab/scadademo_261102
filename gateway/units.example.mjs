@@ -1,50 +1,51 @@
 /* =============================================================
- * DANH SÁCH CỤM ĐỖ (nhiều PLC CP2E) — dùng cho index.omron.multi.mjs
+ * DANH SÁCH THÁP ĐỖ (nhiều PLC CP2E) — dùng cho index.omron.multi.mjs
  * -------------------------------------------------------------
- * Mỗi cụm puzzle/comb là 1 PLC CP2E riêng (IP riêng). Copy file này thành
- * `units.mjs` rồi ĐIỀN đúng địa chỉ đọc được trên HMI (NB-Designer) vào từng ô.
+ * Mỗi tháp là 1 PLC CP2E riêng (IP riêng). Copy file này thành `units.mjs`
+ * rồi điền IP + địa chỉ theo bảng Symbols của từng tháp.
  *
- * Ý nghĩa các ô ("MAPPING" = ghép mỗi tín hiệu với 1 địa chỉ PLC):
- *   host      : IP Ethernet của PLC cụm đó
- *   capacity  : số chỗ của cụm (6/10/14/16…)
- *   count     : ĐỊA CHỈ WORD chứa "số xe đang đỗ"     (vd 'D0')
- *   door      : ĐỊA CHỈ BIT  "cửa an toàn đã đóng"    (vd 'W0.00')
- *   estop     : ĐỊA CHỈ BIT  "E-Stop đang kích hoạt"  (vd 'W0.01')
- *   fault     : ĐỊA CHỈ BIT  "thiết bị báo lỗi"        (vd 'W0.03')
- *   online    : (tuỳ chọn) BIT heartbeat; BỎ TRỐNG thì gateway tự coi là
- *               "online" khi đọc PLC thành công.
+ * Địa chỉ chung đã đọc từ chương trình TASECO (dùng lại cho mọi tháp cùng
+ * chương trình):
+ *   estop = 'W0.00'   (急停)
+ *   fault = 'W15.07'  (有故障)
+ *   online: bỏ trống  -> gateway tự coi là online khi đọc PLC thành công.
+ *   door  : cần XÁC NHẬN bằng check.mjs (đóng cửa xem bit nào lên).
  *
- * Cú pháp địa chỉ (giống trên HMI / CX-Programmer):
- *   Word:  D0, D100, W5, H10, CIO20
- *   Bit:   W0.00 … W0.15  (word W0, bit 0..15) — cũng dùng cho D/H/CIO/A
- * Không dùng tín hiệu nào thì cứ bỏ trống ô đó.
+ * SỐ XE: PLC không có word đếm — mỗi chỗ là 1 bit 车位. Dùng `countBits`
+ * (đếm số bit ON = số xe). Sinh danh sách bằng:
+ *   node gen-countbits.mjs symbols.txt
+ * rồi dán mảng vào `countBits` của tháp đó. Nhớ đối chiếu tổng với số HMI.
  * ============================================================= */
 export const UNITS = [
   {
-    id: 'A-01', // tên hiển thị trên SCADA
+    id: 'Tháp 1', // tên hiển thị trên SCADA
     zone: 'A',
-    host: '192.168.250.11', // IP PLC cụm A-01
+    host: '192.168.250.11', // IP PLC tháp 1
     port: 9600,
     protocol: 'tcp',
-    capacity: 10,
-    count: 'D0',
-    door: 'W0.00',
-    estop: 'W0.01',
-    online: 'W0.02', // bỏ trống nếu PLC không có bit này
-    fault: 'W0.03',
+    capacity: 40, // tổng số chỗ của tháp (bằng số phần tử countBits)
+    estop: 'W0.00',
+    fault: 'W15.07',
+    // door: 'W1.08',   // ứng viên: 栅栏门下限位 — xác nhận trước khi bật
+    countBits: [
+      // dán từ gen-countbits.mjs, ví dụ:
+      'W1.12', 'W1.13', 'W1.14', 'W1.15',
+      'W2.12', 'W2.13', 'W2.14', 'W2.15',
+      // … đầy đủ các bit 车位 của tháp này …
+    ],
   },
   {
-    id: 'A-02',
+    id: 'Tháp 2',
     zone: 'A',
     host: '192.168.250.12',
     port: 9600,
     protocol: 'tcp',
-    capacity: 16,
-    count: 'D0',
-    door: 'W0.00',
-    estop: 'W0.01',
-    online: 'W0.02',
-    fault: 'W0.03',
+    capacity: 40,
+    estop: 'W0.00',
+    fault: 'W15.07',
+    countBits: [
+      // … bit 车位 của tháp 2 …
+    ],
   },
-  // … thêm mỗi cụm 1 khối như trên (đổi id, host, và địa chỉ nếu khác).
+  // … thêm mỗi tháp 1 khối, chủ yếu đổi id + host (+ countBits nếu khác).
 ];
