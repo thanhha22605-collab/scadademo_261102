@@ -55,8 +55,11 @@ export const UNITS = [
     port: 9600,
     protocol: 'tcp',
     capacity: 16,
-    estop: 'W0.00',
-    fault: 'W15.07',
+    estop: 'W0.00', // 急停
+    fault: 'W15.07', // 有故障
+    // Rào chắn (栅栏门): W1.08=hạ(下限位), W1.07=nâng(上限位), W2.00=có xe tại cổng.
+    // door = vị trí ĐÓNG/CHẶN — thường là hạ (W1.08); chốt bằng check.mjs.
+    door: 'W1.08',
     countBits: COUNTBITS.loai_16 ?? [],
   },
   // … thêm mỗi block 1 khối: đổi host: plc(N) + countBits theo LOẠI.
