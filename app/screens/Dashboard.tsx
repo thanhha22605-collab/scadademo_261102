@@ -8,8 +8,23 @@ import {
   Layers,
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
-import { status, zoneTag } from '@/lib/simulation';
-import { Panel, Badge, Tag, type ScreenProps } from './shared';
+import {
+  status,
+  zoneTag,
+  summary,
+  percent,
+  countOf,
+  availableOf,
+  isActiveAlarm,
+} from '@/lib/simulation';
+import {
+  Panel,
+  Badge,
+  Tag,
+  ConnectionBadge,
+  EmptyState,
+  type ScreenProps,
+} from './shared';
 
 function Trend() {
   return (
@@ -109,7 +124,7 @@ const alarmCatName: Record<string, string> = {
   maintenance: 'Đến hạn bảo trì',
 };
 function ScadaAlarmsLive({ sim, dispatch }: Pick<ScreenProps, 'sim' | 'dispatch'>) {
-  const activeAlarms = sim.alarms.filter((a) => !a.ack);
+  const activeAlarms = sim.alarms.filter((a) => isActiveAlarm(a) && !a.ack);
   const cnt = (c: string) => activeAlarms.filter((a) => a.cat === c).length;
   return (
     <Panel
@@ -206,35 +221,51 @@ export default function Dashboard({
 }: ScreenProps) {
   const blocks = sim.blocks.map((b) => ({
     ...b,
-    count: b.slots.filter(Boolean).length,
+    count: countOf(b),
+    avail: availableOf(b, sim),
     state: status(b, sim),
   }));
-  const total = blocks.reduce((n, b) => n + b.count, 0);
-  const capacity = blocks.reduce((n, b) => n + b.capacity, 0);
-  const suv = sim.blocks.reduce(
-    (n, b) => n + b.kinds.filter((k) => k === 'SUV').length,
-    0,
-  );
-  const sedan = total - suv;
-  const available = sim.blocks.reduce(
-    (n, b) => n + (b.state === 'Bảo trì' ? 0 : b.slots.filter((p) => !p).length),
-    0,
-  );
-  const downCount = sim.blocks.filter(
-    (b) => b.state === 'Offline' || b.state === 'Lỗi',
-  ).length;
-  const activeAlarms = sim.alarms.filter((a) => !a.ack).length;
-  const firstAlarm = sim.alarms.find((a) => !a.ack);
+  const sum = summary(sim);
+  const activeAlarms = sim.alarms.filter((a) => isActiveAlarm(a) && !a.ack).length;
+  const firstAlarm = sim.alarms.find((a) => isActiveAlarm(a) && !a.ack);
+  const downCount = sim.blocks.filter((b) => !b.online || b.fault).length;
+  /* Kết nối: chế độ sim là dữ liệu mẫu; nguồn PLC phản ánh trạng thái thật. */
+  const conn =
+    sim.source === 'sim'
+      ? connectivity
+      : [
+          { name: 'Gateway', ok: sim.connection === 'online' },
+          { name: 'PLC (tổng)', ok: sim.blocks.some((b) => b.online) },
+          {
+            name: 'Chất lượng dữ liệu',
+            ok: sim.blocks.length > 0 && sim.blocks.every((b) => b.quality === 'good'),
+          },
+        ];
+
+  if (!sim.blocks.length)
+    return (
+      <>
+        <div className="occ-badges">
+          <ConnectionBadge sim={sim} />
+        </div>
+        <EmptyState sim={sim} what="Dashboard sẽ hiển thị khi có Block dữ liệu." />
+      </>
+    );
+  const capacity = sum.capacity;
   return (
     <>
+      <div className="occ-badges">
+        <ConnectionBadge sim={sim} />
+        {sum.unknown && <Badge tone="amber">Một số dữ liệu chưa xác nhận</Badge>}
+      </div>
       <div className="metrics metrics-6">
         {[
-          { label: 'Tổng Block', value: '9', sub: '3 phân khu', icon: Layers, tone: 'blue' },
-          { label: 'Tổng Pallet', value: '184', sub: 'Sức chứa toàn hệ thống', icon: CircleParking, tone: 'purple' },
-          { label: 'Xe đang đỗ', value: String(total), sub: Math.round((total / capacity) * 100) + '% công suất', icon: Car, tone: 'green' },
-          { label: 'Vị trí khả dụng', value: String(available), sub: capacity - total - available + ' vị trí trống bị khóa', icon: Grid2X2, tone: 'blue' },
-          { label: 'Xe SUV', value: String(suv), sub: Math.round((suv / total) * 100) + '% tổng số xe', icon: Car, tone: 'amber' },
-          { label: 'Xe Sedan', value: String(sedan), sub: Math.round((sedan / total) * 100) + '% tổng số xe', icon: Car, tone: 'green' },
+          { label: 'Tổng Block', value: String(sim.blocks.length), sub: sum.zones.length + ' phân khu', icon: Layers, tone: 'blue' },
+          { label: 'Tổng Pallet', value: String(capacity), sub: 'Sức chứa toàn hệ thống', icon: CircleParking, tone: 'purple' },
+          { label: 'Xe đang đỗ', value: String(sum.total), sub: percent(sum.total, capacity) + '% công suất' + (sum.unknown ? ' · có ô chưa rõ' : ''), icon: Car, tone: 'green' },
+          { label: 'Vị trí khả dụng', value: String(sum.available), sub: Math.max(0, capacity - sum.total - sum.available) + ' vị trí bị khóa/đặt chỗ', icon: Grid2X2, tone: 'blue' },
+          { label: 'Xe SUV', value: String(sum.suv), sub: percent(sum.suv, sum.total) + '% tổng số xe', icon: Car, tone: 'amber' },
+          { label: 'Xe Sedan', value: String(sum.sedan), sub: sum.unclassified > 0 ? sum.unclassified + ' xe chưa phân loại' : percent(sum.sedan, sum.total) + '% tổng số xe', icon: Car, tone: 'green' },
         ].map((m) => (
           <div className="metric" key={m.label}>
             <div>
@@ -273,12 +304,12 @@ export default function Dashboard({
         <div className="stack">
           <Panel title="Mật độ theo Zone">
             <div className="zone-list">
-              {['A', 'B', 'C'].map((z, i) => {
+              {sum.zones.map((z, i) => {
                 const list = blocks.filter((b) => b.zone === z);
-                const count = list.reduce((s, b) => s + b.count, 0);
+                const count = list.reduce((s, b) => s + (b.count ?? 0), 0);
                 const cap = list.reduce((s, b) => s + b.capacity, 0);
                 return (
-                  <div className={'zone-row zone-' + i} key={z}>
+                  <div className={'zone-row zone-' + (i % 3)} key={z}>
                     <div>
                       <span>
                         <b>Zone {z}</b>
@@ -287,19 +318,22 @@ export default function Dashboard({
                         </small>
                       </span>
                       <strong>
-                        {Math.round((count / cap) * 100)}
+                        {percent(count, cap)}
                         <small>%</small>
                       </strong>
                     </div>
-                    <Progress value={(count / cap) * 100} />
+                    <Progress value={percent(count, cap)} />
                   </div>
                 );
               })}
             </div>
           </Panel>
-          <Panel title="Kết nối hệ thống">
+          <Panel
+            title="Kết nối hệ thống"
+            aside={<span className="muted">{sim.source === 'sim' ? 'Dữ liệu mẫu' : 'Thời gian thực'}</span>}
+          >
             <div className="conn-list">
-              {connectivity.map((c) => (
+              {conn.map((c) => (
                 <div className="conn-row" key={c.name}>
                   <span>{c.name}</span>
                   <Badge tone={c.ok ? 'green' : 'red'}>
@@ -334,19 +368,19 @@ export default function Dashboard({
                   <Layers size={19} />
                 </span>
                 <span>
-                  Block {b.id}
-                  <small>{zoneTag[b.zone]}</small>
+                  Block {b.name ?? b.id}
+                  <small>{zoneTag[b.zone] ?? `Zone ${b.zone}`}</small>
                 </span>
                 <ChevronRight size={15} />
               </div>
               <div className="block-numbers">
                 <strong>
-                  {b.count}
+                  {b.count ?? '—'}
                   <small> / {b.capacity}</small>
                 </strong>
-                <span>{Math.round((b.count / b.capacity) * 100)}%</span>
+                <span>{b.count == null ? '—' : percent(b.count, b.capacity) + '%'}</span>
               </div>
-              <Progress value={(b.count / b.capacity) * 100} />
+              <Progress value={percent(b.count ?? 0, b.capacity)} />
               <Tag text={b.state} />
             </button>
           ))}

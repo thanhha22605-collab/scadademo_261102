@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -36,6 +36,9 @@ import {
   Tag,
   BlockSelector,
   PlcCommander,
+  ConnectionBadge,
+  EmptyState,
+  isReadOnly,
   modeButtons,
   time,
   type ScreenProps,
@@ -53,6 +56,9 @@ export default function OperationControl({
   const [notice, setNotice] = useState('');
   const [tab, setTab] = useState('map');
   const b = sim.blocks.find((x) => x.id === selected) ?? sim.blocks[0];
+  if (!b) return <EmptyState sim={sim} />;
+  /* Nguồn PLC là CHỈ ĐỌC: khóa toàn bộ nút điều khiển, chỉ giám sát. */
+  const ro = isReadOnly(sim);
   const job = sim.jobs.find((j) => j.block === b.id && active(j));
   const pick = (id: string) => {
     setSelected(id);
@@ -60,37 +66,36 @@ export default function OperationControl({
     setNotice('');
   };
   const setMode = (m: Mode) => {
+    if (ro) return;
     if (m === 'Maint' && sim.jobs.some((j) => j.block === b.id && active(j))) {
       setNotice('Không thể vào bảo trì khi Block còn lệnh đang chờ / chạy.');
       return;
     }
     dispatch({ type: 'mode', block: b.id, mode: m, time: time() });
   };
-  const cmd = (c: string) =>
+  const cmd = (c: string) => {
+    if (ro) return;
     dispatch({ type: 'command', block: b.id, cmd: c, time: time() });
-  const send = useCallback(
-    (kind: 'in' | 'out') => {
-      const action = {
-        type: 'dispatch' as const,
-        block: b.id,
-        slot,
-        plate,
-        kind,
-        time: time(),
-      };
-      const error = validateDispatch(sim, action);
-      if (error) {
-        setNotice(error);
-        return;
-      }
-      dispatch(action);
-      setNotice(
-        `Đã thêm lệnh ${kind === 'in' ? 'nhập' : 'xuất'} xe vào hàng đợi.`,
-      );
-      if (kind === 'in') setPlate('');
-    },
-    [b.id, slot, plate, sim, dispatch],
-  );
+  };
+  const send = (kind: 'in' | 'out') => {
+    if (ro) return;
+    const action = {
+      type: 'dispatch' as const,
+      block: b.id,
+      slot,
+      plate,
+      kind,
+      time: time(),
+    };
+    const error = validateDispatch(sim, action);
+    if (error) {
+      setNotice(error);
+      return;
+    }
+    dispatch(action);
+    setNotice(`Đã thêm lệnh ${kind === 'in' ? 'nhập' : 'xuất'} xe vào hàng đợi.`);
+    if (kind === 'in') setPlate('');
+  };
   const zoneBlocks = sim.blocks.filter((x) => zone === 'all' || x.zone === zone);
   const manual = b.mode === 'Manual';
   function palletGrid(block: Block) {
@@ -140,12 +145,19 @@ export default function OperationControl({
   return (
     <>
       <div className="occ-badges">
+        <ConnectionBadge sim={sim} />
         <Badge tone={b.state === 'Offline' ? 'red' : 'green'}>
           PLC Link: {b.state === 'Offline' ? 'MẤT' : 'OK'}
         </Badge>
         <Badge tone="blue">Operator Session · supervisor01</Badge>
         {b.forced && <Badge tone="red">Force Mode Active</Badge>}
       </div>
+      {ro && (
+        <div className="notice amber" role="status">
+          Nguồn dữ liệu là PLC (gateway chỉ đọc) — mọi lệnh điều khiển đã bị khóa,
+          màn hình chỉ dùng để giám sát.
+        </div>
+      )}
       <BlockSelector
         sim={sim}
         current={b.id}
@@ -302,6 +314,7 @@ export default function OperationControl({
               {modeButtons.map((m) => (
                 <button
                   key={m.m}
+                  disabled={ro}
                   className={
                     'mode-btn ' +
                     (m.m === 'EStop' ? 'estop ' : '') +
@@ -315,40 +328,42 @@ export default function OperationControl({
             </div>
             <div className="ctrl-section">Hành động khởi chạy (Block Commands)</div>
             <div className="cmd-grid">
-              <button className="cmd-btn go" onClick={() => cmd('START')}>
+              <button className="cmd-btn go" disabled={ro} onClick={() => cmd('START')}>
                 <Play size={14} /> START
               </button>
-              <button className="cmd-btn stop" onClick={() => cmd('STOP')}>
+              <button className="cmd-btn stop" disabled={ro} onClick={() => cmd('STOP')}>
                 <Square size={14} /> STOP
               </button>
-              <button className="cmd-btn" onClick={() => cmd('PAUSE')}>
+              <button className="cmd-btn" disabled={ro} onClick={() => cmd('PAUSE')}>
                 <Pause size={14} /> PAUSE
               </button>
-              <button className="cmd-btn" onClick={() => cmd('RESUME')}>
+              <button className="cmd-btn" disabled={ro} onClick={() => cmd('RESUME')}>
                 <RotateCcw size={14} /> RESUME
               </button>
               <button
                 className={'cmd-btn ' + (b.locked ? 'active' : '')}
+                disabled={ro}
                 onClick={() => cmd('LOCK')}
               >
                 <Lock size={14} /> KHÓA
               </button>
-              <button className="cmd-btn" onClick={() => cmd('UNLOCK')}>
+              <button className="cmd-btn" disabled={ro} onClick={() => cmd('UNLOCK')}>
                 <Unlock size={14} /> MỞ KHÓA
               </button>
-              <button className="cmd-btn" onClick={() => cmd('DISABLE_MAINT')}>
+              <button className="cmd-btn" disabled={ro} onClick={() => cmd('DISABLE_MAINT')}>
                 Kết thúc bảo trì
               </button>
               <button
                 className={'cmd-btn ' + (b.forced ? 'active' : '')}
+                disabled={ro}
                 onClick={() => cmd('FORCE')}
               >
                 <Zap size={14} /> Cưỡng bức
               </button>
-              <button className="cmd-btn warn" onClick={() => cmd('SIM_FAULT')}>
+              <button className="cmd-btn warn" disabled={ro} onClick={() => cmd('SIM_FAULT')}>
                 Giả lập lỗi
               </button>
-              <button className="cmd-btn warn" onClick={() => cmd('SIM_JAM')}>
+              <button className="cmd-btn warn" disabled={ro} onClick={() => cmd('SIM_JAM')}>
                 Giả lập kẹt
               </button>
             </div>
@@ -418,10 +433,11 @@ export default function OperationControl({
           </Box>
           <Box title="Gửi lệnh trực tiếp PLC (Direct PLC)">
             <p className="hint">
-              Mô phỏng chu trình lệnh xuống PLC: Send → Sent → Accepted →
-              Running → Done.
+              {ro
+                ? 'Gateway hiện chỉ đọc — chưa có kênh ghi/điều khiển xuống PLC.'
+                : 'Mô phỏng chu trình lệnh xuống PLC: Send → Sent → Accepted → Running → Done.'}
             </p>
-            <PlcCommander block={b.id} dispatch={dispatch} />
+            <PlcCommander block={b.id} dispatch={dispatch} readOnly={ro} />
           </Box>
         </div>
       </div>
