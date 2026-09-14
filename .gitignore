@@ -47,3 +47,6 @@ gateway/units.json
 
 # file PLC/HMI nhị phân của hãng (không versioning)
 codePLC_TASECO/
+
+# TypeScript incremental build cache
+tsconfig.tsbuildinfo
