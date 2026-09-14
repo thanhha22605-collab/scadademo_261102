@@ -44,14 +44,14 @@ export default function Settings() {
       )}
       <div className="settings-grid">
         <Panel title="Kết nối truyền thông PLC/HMI" pad>
-          <Field label="IP SCADA Server (LUMI SCADA)" value="192.168.1.100" />
+          <Field label="IP SCADA Server (TASECO SCADA)" value="192.169.1.100" />
           <Field label="Port Modbus TCP" value="502" />
           <Field label="Chu kỳ polling (ms)" value="500" />
           <Field label="Timeout kết nối (ms)" value="3000" />
         </Panel>
         <Panel title="Cơ sở dữ liệu SCADA" pad>
           <Field label="DB Host Address" value="192.168.1.200" />
-          <Field label="DB Name" value="lumi_scada_tp" />
+          <Field label="DB Name" value="taseco_scada_tp" />
           <Field label="Lưu trữ cảnh báo & sự kiện (ngày)" value="730" />
           <Field label="Tần suất tự động backup (giờ)" value="12" />
         </Panel>

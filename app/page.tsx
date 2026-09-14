@@ -154,7 +154,7 @@ export default function Home() {
           <div className="topbar-brand">
             <SidebarTrigger />
             <div>
-              <strong>LUMI Automated Parking SCADA</strong>
+              <strong>TASECO Automated Parking SCADA</strong>
               <small>Hệ thống đỗ xe tự động – Puzzle Parking System</small>
             </div>
           </div>
@@ -187,7 +187,7 @@ export default function Home() {
         <div className="content">
           <div className="page-heading">
             <div>
-              <div className="eyebrow">LUMI · AUTOMATED PARKING</div>
+              <div className="eyebrow">TASECO · AUTOMATED PARKING</div>
               <h1>{item?.title}</h1>
               <p>{item?.sub}</p>
             </div>
@@ -234,7 +234,7 @@ export default function Home() {
             <div className="lock-brand">
               <span className="brand-mark">TP</span>
               <div>
-                TotalParking SCADA<small>LUMI Automated Parking · v2.4</small>
+                TotalParking SCADA<small>TASECO Automated Parking · v2.4</small>
               </div>
             </div>
             <label className="set-field">
