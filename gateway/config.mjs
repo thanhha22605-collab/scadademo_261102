@@ -1,13 +1,8 @@
 /* Cấu hình gateway — chỉnh qua biến môi trường hoặc sửa trực tiếp giá trị mặc định. */
 export const config = {
-  /* --- Modbus TCP (bản chung; CP2E N-type chỉ làm Modbus MASTER nên thường
-         KHÔNG đọc trực tiếp được bằng cách này — xem phần FINS bên dưới) --- */
-  plc: {
-    host: process.env.PLC_HOST || '192.168.1.50',
-    port: Number(process.env.PLC_PORT || 502),
-    unitId: Number(process.env.PLC_ID || 1),
-  },
-  /* --- FINS (Omron CP2E / CP1 / CJ / CS…): dùng cho index.omron.mjs --- */
+  /* --- FINS (Omron CP2E / CP1 / CJ / CS…): mặc định dùng cho index.omron.multi.mjs.
+         Mỗi tháp khai báo host/port riêng ở units.json; các giá trị dưới đây chỉ là
+         fallback khi 1 tháp không ghi rõ cổng. --- */
   fins: {
     host: process.env.FINS_HOST || '192.168.250.1', // IP mặc định Ethernet CP2E
     port: Number(process.env.FINS_PORT || 9600), // cổng FINS/TCP

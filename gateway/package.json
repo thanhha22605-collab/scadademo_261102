@@ -3,16 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Gateway đọc PLC (Modbus TCP hoặc Omron FINS) và phát cho TotalParking SCADA qua WebSocket",
+  "description": "Gateway đọc nhiều PLC Omron CP2E qua FINS và phát cho TotalParking SCADA qua WebSocket",
   "scripts": {
-    "start": "node index.mjs",
-    "start:omron": "node index.omron.mjs",
+    "start": "node index.omron.multi.mjs",
     "start:omron-multi": "node index.omron.multi.mjs",
     "check": "node check.mjs",
     "gen-countbits": "node gen-countbits.mjs"
   },
   "dependencies": {
-    "modbus-serial": "^8.0.17",
     "omron-fins": "^0.5.0",
     "ws": "^8.18.0"
   }

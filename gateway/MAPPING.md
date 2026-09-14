@@ -2,7 +2,7 @@
 
 File `.cxp` (CX-Programmer) và `.emtp` (NB-Designer) là **nhị phân đóng** — không
 trích được địa chỉ từ bên ngoài. Cần bạn export **bảng địa chỉ giao tiếp** rồi tôi
-điền vào `tagmap`/`units`. Chọn 1 trong 2 cách nhanh nhất:
+đối chiếu với preset trong `presets.mjs` (và `units.json`). Chọn 1 trong 2 cách nhanh nhất:
 
 ## Cách A — Từ HMI (NB-Designer) — nhanh nhất
 HMI đang đọc/ghi đúng các thanh ghi PLC cần cho SCADA.
