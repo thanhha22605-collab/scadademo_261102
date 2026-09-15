@@ -41,8 +41,7 @@ next-env.d.ts
 /outputs/
 /work/
 
-# gateway: cấu hình PLC thật (giữ bí mật IP)
-gateway/units.mjs
+# gateway: cấu hình PLC thật do UI ghi ra (giữ bí mật IP)
 gateway/units.json
 
 # file PLC/HMI nhị phân của hãng (không versioning)

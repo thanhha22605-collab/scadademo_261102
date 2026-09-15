@@ -34,9 +34,10 @@ HMI đang đọc/ghi đúng các thanh ghi PLC cần cho SCADA.
 Analog cho Historian (nếu có): dòng điện/nhiệt độ motor, tần số VFD → word/DINT.
 
 ## Nếu là NHIỀU PLC (mỗi cụm 1 con)
-Cho tôi **danh sách IP** từng cụm + cụm đó thuộc Block/Zone nào. Tôi sẽ dùng
-`units.example.mjs` để cấu hình gateway đọc song song nhiều PLC rồi gộp thành một
-màn hình SCADA.
+Cho tôi **danh sách IP** từng cụm + cụm đó thuộc Block/Zone nào. Khai báo từng
+tháp ngay trong SCADA (tab **Cấu hình PLC**): chọn loại tháp (đã map sẵn trong
+`presets.mjs`), nhập số Block → IP tự suy. Gateway lưu vào `units.json` và đọc
+song song nhiều PLC rồi gộp thành một màn hình SCADA — không cần sửa code.
 
 ## Câu hỏi mở
 - Ở thực địa có **bao nhiêu cụm đỗ / bao nhiêu PLC**, IP mỗi con?

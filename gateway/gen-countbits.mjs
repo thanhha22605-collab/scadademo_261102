@@ -5,7 +5,7 @@
  * Cách dùng:
  *   node gen-countbits.mjs symbols.txt              # tự tìm 车位 / ³µÎ»
  *   node gen-countbits.mjs symbols.txt "车位"        # chỉ định từ khoá khác
- * Dán kết quả (mảng countBits) vào 1 cụm trong units.mjs.
+ * Dán kết quả (mảng bits) vào một preset loại tháp trong presets.mjs.
  * ============================================================= */
 import fs from 'node:fs';
 
