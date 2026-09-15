@@ -62,8 +62,11 @@ export function readWord(client, address, timeoutMs = 2200) {
         clearTimeout(timer);
         if (err) return reject(new Error(String(err.message || err)));
         const values = msg?.response?.values ?? msg?.values;
-        if (!Array.isArray(values) || values.length !== 1 || !Number.isInteger(values[0]) || values[0] < 0 || values[0] > 65535) return reject(new Error('Phản hồi FINS không hợp lệ.'));
-        resolve(values[0]);
+        const raw = Array.isArray(values) && values.length === 1 ? values[0] : undefined;
+        // omron-fins trả về int16 CÓ DẤU: word có bit15=1 (vd 0x8000) về dạng số âm.
+        // Chấp nhận -32768..65535 rồi chuẩn hóa về unsigned 16-bit để tách bit đúng.
+        if (!Number.isInteger(raw) || raw < -32768 || raw > 65535) return reject(new Error('Phản hồi FINS không hợp lệ.'));
+        resolve(raw & 0xffff);
       });
     } catch (err) { clearTimeout(timer); reject(err); }
   });
@@ -86,8 +89,18 @@ export class Poller {
   }
   async readUnit(u, generation) {
     let c = this.clients.get(u.id);
+    if (!c) {
+      // FinsClient kết nối bất đồng bộ (TCP + handshake FINS mất vài ms).
+      c = this.makeClient(u);
+      this.clients.set(u.id, c);
+      const evict = () => { if (this.clients.get(u.id) === c) this.clients.delete(u.id); };
+      c.on?.('close', evict); // socket đứt → dọn client để vòng sau tạo lại và nối lại
+      c.on?.('error', () => {}); // nuốt lỗi; 'close' theo sau sẽ dọn
+    }
+    // Chưa kết nối xong thì báo tạm "không sẵn sàng" và CHỜ vòng poll sau —
+    // KHÔNG xóa client (tránh vòng lặp tạo–đọc–xóa khiến không bao giờ đọc được).
+    if (c.connected === false) return this.unavailable(u);
     try {
-      if (!c) { c = this.makeClient(u); this.clients.set(u.id, c); }
       const fields = Object.fromEntries(['door', 'estop', 'fault'].map(k => [k, parseAddress(u[k])]));
       const bits = u.countBits.map(parseAddress);
       const words = [...new Set([...Object.values(fields), ...bits].map(f => f.word))];

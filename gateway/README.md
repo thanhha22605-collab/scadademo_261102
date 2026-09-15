@@ -47,6 +47,22 @@ MOCK=true npm run start:omron-multi
 Sau đó vẫn thêm/sửa tháp ở tab **Cấu hình PLC** như bình thường; Dashboard sẽ
 thấy số xe từng tháp thay đổi. Bỏ `MOCK` để đọc PLC thật.
 
+### Kiểm chứng đường đọc FINS thật (không cần PLC)
+
+```bash
+npm run test:fins
+```
+
+Dựng một **FINS/TCP server giả** (đáp handshake node + trả word, kể cả word có
+bit15=1) rồi chạy `Poller` thật đọc qua `omron-fins`, kiểm: gateway kết nối được,
+đếm xe / cửa / E‑Stop / lỗi đúng, và cập nhật động khi thanh ghi đổi. Dùng để
+xác nhận logic đọc trước khi ra hiện trường.
+
+> **Còn phải xác nhận tại hiện trường** (không kiểm được bằng server giả): cực
+> tính bit (`车位` 1=có xe? cửa W1.08 hạ/W1.07 nâng? E‑Stop thường-mở/đóng?),
+> danh sách `countBits` và địa chỉ `estop`/`fault` từng loại tháp — đối chiếu
+> Symbols export của CX‑Programmer.
+
 ## Lấy đúng địa chỉ PLC
 
 File `.cxp`/`.emtp` là nhị phân đóng, không đọc địa chỉ từ ngoài được. Xem
