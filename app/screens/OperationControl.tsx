@@ -97,7 +97,9 @@ export default function OperationControl({
     if (kind === 'in') setPlate('');
   };
   const zoneBlocks = sim.blocks.filter((x) => zone === 'all' || x.zone === zone);
-  const manual = b.mode === 'Manual';
+  // Gọi/Trả xe được phép khi block vận hành được (khớp reducer: không bắt buộc mode Manual);
+  // chỉ khóa khi nguồn PLC chỉ-đọc hoặc block đang bị liên động chặn.
+  const canManual = !ro && !blocked(b);
   function palletGrid(block: Block) {
     return (
       <div className="pallet-grid">
@@ -390,11 +392,12 @@ export default function OperationControl({
               </div>
             )}
           </Box>
-          <Box title="Gọi / Trả xe thủ công (Manual only)">
-            {!manual && (
+          <Box title="Gọi / Trả xe (thủ công)">
+            {!canManual && (
               <div className="notice amber">
-                Chỉ thao tác được khi Block ở chế độ MANUAL. Chọn MANUAL ở Mode
-                Selector.
+                {ro
+                  ? 'Nguồn PLC chỉ đọc — không gửi lệnh điều phối được.'
+                  : `Không thể điều phối: ${blocked(b)}.`}
               </div>
             )}
             <div className="control-line">
@@ -410,21 +413,21 @@ export default function OperationControl({
               <input
                 placeholder="51H-123.45"
                 value={plate}
-                disabled={!manual}
+                disabled={!canManual}
                 onChange={(e) => setPlate(e.target.value.toUpperCase())}
               />
             </label>
             <div className="control-actions">
               <button
                 className="primary"
-                disabled={!manual || !!blocked(b) || !!b.slots[slot]}
+                disabled={!canManual || !!b.slots[slot]}
                 onClick={() => send('in')}
               >
                 <ArrowDownLeft size={16} /> Gửi lệnh Gọi xe
               </button>
               <button
                 className="secondary"
-                disabled={!manual || !!blocked(b) || !b.slots[slot]}
+                disabled={!canManual || !b.slots[slot]}
                 onClick={() => send('out')}
               >
                 <ArrowUpRight size={16} /> Gửi lệnh Trả xe

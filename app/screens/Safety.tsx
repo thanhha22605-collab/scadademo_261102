@@ -16,6 +16,9 @@ import {
   Badge,
   Choice,
   BlockSelector,
+  ConnectionBadge,
+  EmptyState,
+  isReadOnly,
   time,
   type ScreenProps,
 } from './shared';
@@ -33,9 +36,14 @@ export default function Safety({
   const [bypReason, setBypReason] = useState('');
   const [bypNote, setBypNote] = useState('');
   const b = sim.blocks.find((x) => x.id === selected) ?? sim.blocks[0];
+  if (!b) return <EmptyState sim={sim} />;
+  const ro = isReadOnly(sim); // nguồn PLC chỉ đọc → khóa mọi thao tác an toàn
   const toggle = (
     field: 'doorClosed' | 'estop' | 'paused' | 'maintenance' | 'online',
-  ) => dispatch({ type: 'toggle', block: b.id, field, time: time() });
+  ) => {
+    if (ro) return;
+    dispatch({ type: 'toggle', block: b.id, field, time: time() });
+  };
   const conditions = [
     { label: 'Cửa an toàn đóng', ok: b.doorClosed, detail: 'Đóng kín trước khi vận hành' },
     { label: 'Không kích hoạt E-Stop', ok: !b.estop, detail: 'Nút dừng khẩn cấp phải nhả' },
@@ -47,6 +55,15 @@ export default function Safety({
   const anyBypass = sim.bypasses.length > 0 || sim.blocks.some((x) => x.forced);
   return (
     <>
+      <div className="occ-badges">
+        <ConnectionBadge sim={sim} />
+      </div>
+      {ro && (
+        <div className="notice amber" role="status">
+          Nguồn dữ liệu là PLC (gateway chỉ đọc) — không thể đổi tín hiệu an toàn
+          hay tạo Bypass từ đây; màn hình chỉ để giám sát liên động.
+        </div>
+      )}
       {anyBypass && (
         <div className="force-banner">
           <ShieldCheck size={16} />
@@ -114,8 +131,9 @@ export default function Safety({
                   aria-label={x.label}
                   checked={x.value}
                   disabled={
-                    x.field === 'maintenance' &&
-                    sim.jobs.some((j) => j.block === b.id && active(j))
+                    ro ||
+                    (x.field === 'maintenance' &&
+                      sim.jobs.some((j) => j.block === b.id && active(j)))
                   }
                   onCheckedChange={() => toggle(x.field)}
                 />
@@ -162,7 +180,9 @@ export default function Safety({
           <div className="control-actions">
             <button
               className="primary"
+              disabled={ro}
               onClick={() => {
+                if (ro) return;
                 if (!bypReason.trim()) {
                   setBypNote('Vui lòng nhập lý do bypass.');
                   return;
@@ -215,6 +235,7 @@ export default function Safety({
                 <TableCell>
                   <button
                     className="secondary"
+                    disabled={ro}
                     onClick={() =>
                       dispatch({
                         type: 'bypass',

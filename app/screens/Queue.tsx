@@ -9,9 +9,10 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import { active } from '@/lib/simulation';
-import { Box, Badge, Rows3, time, type ScreenProps } from './shared';
+import { Box, Badge, Rows3, ConnectionBadge, isReadOnly, time, type ScreenProps } from './shared';
 
 export default function Queue({ sim, dispatch }: ScreenProps) {
+  const ro = isReadOnly(sim); // nguồn PLC chỉ đọc → khóa điều phối hàng đợi
   const eta = (p: number) => Math.max(0, Math.round((100 - p) / 10)) + 's';
   const jobState = (j: (typeof sim.jobs)[number]) =>
     j.hold
@@ -61,6 +62,7 @@ export default function Queue({ sim, dispatch }: ScreenProps) {
           {j.priority !== 'VIP' && (
             <button
               className="mini"
+              disabled={ro}
               onClick={() =>
                 dispatch({ type: 'queue', op: 'vip', id: j.id, time: time() })
               }
@@ -71,6 +73,7 @@ export default function Queue({ sim, dispatch }: ScreenProps) {
           {j.hold ? (
             <button
               className="mini"
+              disabled={ro}
               onClick={() =>
                 dispatch({ type: 'queue', op: 'resume', id: j.id, time: time() })
               }
@@ -80,6 +83,7 @@ export default function Queue({ sim, dispatch }: ScreenProps) {
           ) : (
             <button
               className="mini"
+              disabled={ro}
               onClick={() =>
                 dispatch({ type: 'queue', op: 'hold', id: j.id, time: time() })
               }
@@ -89,6 +93,7 @@ export default function Queue({ sim, dispatch }: ScreenProps) {
           )}
           <button
             className="mini danger"
+            disabled={ro}
             onClick={() =>
               dispatch({ type: 'queue', op: 'reject', id: j.id, time: time() })
             }
@@ -103,6 +108,10 @@ export default function Queue({ sim, dispatch }: ScreenProps) {
   const exit = sim.jobs.filter((j) => j.kind === 'out' && active(j));
   return (
     <>
+      <div className="occ-badges">
+        <ConnectionBadge sim={sim} />
+        {ro && <span className="muted">Chỉ đọc — không điều phối được hàng đợi từ nguồn PLC.</span>}
+      </div>
       <Box
         title="Hàng đợi xe gửi vào bãi (Entry Queue)"
         aside={<span className="muted">{entry.length} xe đang chờ</span>}
