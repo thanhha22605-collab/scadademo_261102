@@ -23,6 +23,7 @@ import {
   SidebarMenuButton,
   SidebarTrigger,
 } from '@/components/ui/sidebar';
+import { isActiveAlarm } from '@/lib/simulation';
 import { Badge } from './ui';
 import { useSimulation } from './screens/shared';
 import { screenRegistry } from './screens';
@@ -36,8 +37,10 @@ export default function Home() {
   const [locked, setLocked] = useState(false);
   const { sim, dispatch } = useSimulation();
   const [selected, setSelected] = useState('A-01');
-  const activeAlarms = sim.alarms.filter((a) => !a.ack).length;
-  const hasFault = sim.alarms.some((a) => !a.ack && a.cat === 'system');
+  // Đèn "Lỗi" phản ánh lỗi CÒN hiệu lực (chưa được khắc phục), độc lập với ACK —
+  // xác nhận không được che lỗi chưa xử lý. Bộ đếm chuông = alarm còn active và chưa ACK.
+  const activeAlarms = sim.alarms.filter((a) => isActiveAlarm(a) && !a.ack).length;
+  const hasFault = sim.alarms.some((a) => isActiveAlarm(a) && a.cat === 'system');
   useEffect(() => {
     const tick = () => {
       const d = new Date();

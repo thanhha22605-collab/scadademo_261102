@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { CheckCheck, Download, ShieldCheck } from 'lucide-react';
+import { isActiveAlarm, type Alarm } from '@/lib/simulation';
 import { Box, Badge, Tag, Choice, csv, time, type ScreenProps } from './shared';
 
 const catName: Record<string, string> = {
@@ -8,16 +9,21 @@ const catName: Record<string, string> = {
   system: 'Lỗi thiết bị',
   maintenance: 'Đến hạn bảo trì',
 };
+/* Trạng thái 1 alarm: resolved (đã hết) / active-acked (còn nhưng đã xác nhận) / active-new. */
+const alarmState = (a: Alarm) =>
+  !isActiveAlarm(a) ? 'Đã xử lý' : a.ack ? 'Đã xác nhận' : 'Đang hoạt động';
 export default function Alarms({ sim, dispatch }: ScreenProps) {
   const [alarmCat, setAlarmCat] = useState('all');
   const [alarmSev, setAlarmSev] = useState('all');
   const count = (c: string) =>
-    sim.alarms.filter((a) => !a.ack && a.cat === c).length;
-  const rows = sim.alarms.filter(
-    (a) =>
-      (alarmCat === 'all' || a.cat === alarmCat) &&
-      (alarmSev === 'all' || a.sev === alarmSev),
-  );
+    sim.alarms.filter((a) => isActiveAlarm(a) && !a.ack && a.cat === c).length;
+  const rows = sim.alarms
+    .filter(
+      (a) =>
+        (alarmCat === 'all' || a.cat === alarmCat) &&
+        (alarmSev === 'all' || a.sev === alarmSev),
+    )
+    .sort((a, b) => Number(isActiveAlarm(b)) - Number(isActiveAlarm(a)));
   const zoneOf = (blk: string) => blk[0];
   return (
     <>
@@ -69,7 +75,7 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
                     a.device ?? '',
                     a.code ?? '',
                     a.text,
-                    a.ack ? 'Đã xác nhận' : 'Đang hoạt động',
+                    alarmState(a),
                     a.ackBy ?? '',
                   ]),
                 ],
@@ -149,13 +155,21 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
                   <td className="mono">{a.code ?? '—'}</td>
                   <td>{a.text}</td>
                   <td>
-                    <Tag text={a.ack ? 'Hoàn tất' : 'Cảnh báo'} />
+                    <Tag
+                      text={
+                        !isActiveAlarm(a)
+                          ? 'Đã xử lý'
+                          : a.ack
+                            ? 'Đã xác nhận'
+                            : 'Cảnh báo'
+                      }
+                    />
                   </td>
                   <td>{a.ackBy ?? '—'}</td>
                   <td>
                     <button
                       className="secondary"
-                      disabled={a.ack}
+                      disabled={a.ack || !isActiveAlarm(a)}
                       onClick={() =>
                         dispatch({ type: 'ack', id: a.id, time: time() })
                       }
