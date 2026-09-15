@@ -8,9 +8,9 @@ export type Block = {
   maintenance: boolean;
   jammed: boolean;
   quality: Quality;
-  photogateClear: boolean;
-  limitOk: boolean;
-  overloadOk: boolean;
+  photogateClear: boolean | null;
+  limitOk: boolean | null;
+  overloadOk: boolean | null;
   bypassed: string[];
   occupancy?: (boolean | null)[];
   reportedCount?: number | null;
@@ -336,10 +336,10 @@ export function active(j: Job) {
 }
 export function refreshBlock(b: Block): Block {
   b.forced=b.bypassed.length>0;
-  b.state=!b.online?'Offline':b.fault||b.jammed?'Lỗi':b.maintenance?'Bảo trì':b.estop||!b.doorClosed||!b.photogateClear||!b.limitOk||!b.overloadOk?'Cảnh báo':'Bình thường';
+  b.state=!b.online?'Offline':b.fault||b.jammed?'Lỗi':b.maintenance?'Bảo trì':b.estop||!b.doorClosed||b.photogateClear!==true||b.limitOk!==true||b.overloadOk!==true?'Cảnh báo':'Bình thường';
   return b;
 }
-export function blocked(b: Block) {
+export function interlockReason(b: Block) {
   if(b.estop)return 'Dừng khẩn cấp';
   if(!b.online)return 'Mất kết nối';
   if(b.quality!=='good')return 'Dữ liệu chưa xác nhận';
@@ -347,11 +347,19 @@ export function blocked(b: Block) {
   if(b.fault)return 'Sự cố thiết bị';
   if(b.jammed)return 'Kẹt cơ cấu';
   if(b.maintenance)return 'Đang bảo trì';
-  if(b.locked)return 'Block đã khóa';
-  if(b.paused)return 'Tạm dừng';
+  if(b.photogateClear===null)return 'Tín hiệu Photogate chưa được ánh xạ';
+  if(b.limitOk===null)return 'Tín hiệu hành trình chưa được ánh xạ';
+  if(b.overloadOk===null)return 'Tín hiệu quá tải chưa được ánh xạ';
   if(!b.photogateClear&&!b.bypassed.includes('Photogate - Cảm biến an toàn'))return 'Vật cản tại Photogate';
   if(!b.limitOk&&!b.bypassed.includes('LS-T3 - Cảm biến hành trình'))return 'Lỗi cảm biến hành trình';
   if(!b.overloadOk&&!b.bypassed.includes('Lift Motor - Quá tải động cơ nâng'))return 'Quá tải động cơ';
+  return '';
+}
+export function blocked(b: Block) {
+  const reason=interlockReason(b);
+  if(reason)return reason;
+  if(b.locked)return 'Block đã khóa';
+  if(b.paused)return 'Tạm dừng — cần START/RESUME';
   return '';
 }
 export function status(b: Block,s:Sim) {
@@ -368,7 +376,7 @@ export function summary(s:Sim){
  const total=s.blocks.reduce((n,b)=>n+(countOf(b)??0),0);
  const suv=s.blocks.reduce((n,b)=>n+b.kinds.filter(k=>k==='SUV').length,0);
  const sedan=s.blocks.reduce((n,b)=>n+b.kinds.filter(k=>k==='Sedan').length,0);
- return {capacity,total,suv,sedan,unclassified:total-suv-sedan,available:s.blocks.reduce((n,b)=>n+availableOf(b,s),0),unknown:s.blocks.some(b=>countOf(b)===null||b.quality!=='good'),zones:[...new Set(s.blocks.map(b=>b.zone))]};
+ return {capacity,total,suv,sedan,unclassified:Math.max(0,total-suv-sedan),available:s.blocks.reduce((n,b)=>n+availableOf(b,s),0),unknown:s.blocks.some(b=>countOf(b)===null||b.quality!=='good'),zones:[...new Set(s.blocks.map(b=>b.zone))]};
 }
 export const percent=(n:number,d:number)=>d>0?Math.round(n/d*100):0;
 export type Action =
@@ -421,9 +429,11 @@ export function validateDispatch(
     return 'Chọn một pallet hợp lệ.';
   if (s.jobs.some((j) => active(j) && j.block === b.id && j.slot === a.slot))
     return 'Pallet đã có lệnh trong hàng đợi.';
-  if (a.kind === 'out' && !b.slots[a.slot]) return 'Pallet này không có xe.';
+  const occupied=occupancyOf(b)[a.slot];
+  if(occupied===null)return 'Chưa xác nhận được trạng thái pallet.';
+  if (a.kind === 'out' && !occupied) return 'Pallet này không có xe.';
   if (a.kind === 'in') {
-    if (b.slots[a.slot]) return 'Pallet đã có xe.';
+    if (occupied) return 'Pallet đã có xe.';
     const p = a.plate.trim().toUpperCase();
     if (!/^[0-9]{2}[A-Z]{1,2}-[0-9]{3}\.[0-9]{2}$/.test(p))
       return 'Nhập biển số dạng 51H-123.45.';
@@ -469,6 +479,14 @@ export function reduceSim(state: Sim, a: Action): Sim {
     s.logs.unshift({ id: s.nextId++, time: a.time, block, text });
     s.logs = s.logs.slice(0, 500);
   };
+  const activateAlarm=(alarm:Alarm)=>{
+    if(s.alarms.some(x=>x.id===alarm.id&&isActiveAlarm(x)))return;
+    s.alarms=s.alarms.filter(x=>x.id!==alarm.id);
+    s.alarms.unshift({...alarm,active:true});
+  };
+  const resolveAlarm=(id:string)=>{
+    s.alarms=s.alarms.map(x=>x.id===id&&isActiveAlarm(x)?{...x,active:false,resolvedAt:a.time}:x);
+  };
   const syncAlarms = (b: Block) => {
     const sync = (
       id: string,
@@ -477,9 +495,8 @@ export function reduceSim(state: Sim, a: Action): Sim {
       extra: Partial<Alarm> = {},
     ) => {
       if (on) {
-        if (!s.alarms.some((x) => x.id === id && isActiveAlarm(x)))
-          {s.alarms=s.alarms.filter(x=>x.id!==id);s.alarms.unshift({ id, block: b.id, text, ack: false, active:true, at:a.time,...extra });}
-      } else s.alarms = s.alarms.map(x=>x.id===id?{...x,active:false,resolvedAt:a.time}:x);
+        activateAlarm({ id, block: b.id, text, ack: false, at:a.time,...extra });
+      } else resolveAlarm(id);
     };
     sync(
       `DOOR-${b.id}`,
@@ -567,6 +584,7 @@ export function reduceSim(state: Sim, a: Action): Sim {
       if(s.jobs.some(j=>j.block===b.id&&active(j)))return state;
       b.maintenance=!b.maintenance;if(!b.estop)b.mode=b.maintenance?'Maint':'Auto';
     }else {b[a.field]=!b[a.field];if(a.field==='estop')b.mode=b.estop?'EStop':b.maintenance?'Maint':'Auto';}
+    // KHÔNG tự set paused: interlock đã đóng băng job qua blocked(); khi interlock hết, job tự chạy lại.
     refreshBlock(b);syncAlarms(b);log(b.id,'Thay đổi tín hiệu '+a.field);
   }
   if(a.type==='mode'){
@@ -578,16 +596,27 @@ export function reduceSim(state: Sim, a: Action): Sim {
   }
   if(a.type==='command'){
     const b=s.blocks.find(b=>b.id===a.block);if(!b)return state;
-    if(a.cmd==='START'||a.cmd==='RESUME')b.paused=false;
+    if(a.cmd==='START'||a.cmd==='RESUME'){
+      const reason=interlockReason(b)|| (b.locked?'Block đã khóa':'');
+      if(reason){log(b.id,`Từ chối ${a.cmd}: ${reason}.`);return s;}
+      b.paused=false;
+    }
     else if(a.cmd==='STOP'||a.cmd==='PAUSE')b.paused=true;
-    else if(a.cmd==='LOCK')b.locked=true;
+    else if(a.cmd==='LOCK')b.locked=true; // 'locked' đã chặn tick; không cần pause thêm (tránh kẹt pause sau UNLOCK)
     else if(a.cmd==='UNLOCK')b.locked=false;
     else if(a.cmd==='DISABLE_MAINT'){b.maintenance=false;if(!b.estop)b.mode='Auto';}
     else if(a.cmd==='SIM_FAULT'){
-      b.fault=!b.fault;
-      if(!b.fault)s.alarms=s.alarms.map(x=>x.block===b.id&&x.cat==='system'&&x.device!=='PLC-Link'&&x.device!=='AI-VDS'?{...x,active:false,resolvedAt:a.time}:x);
-      else s.alarms.unshift({id:'FAULT-'+b.id,block:b.id,cat:'system',sev:'Nghiêm trọng',text:'Lỗi thiết bị mô phỏng.',active:true,ack:false,at:a.time});
-    }else if(a.cmd==='SIM_JAM'){b.jammed=!b.jammed;if(b.jammed)s.alarms.unshift({id:'JAM-'+b.id,block:b.id,cat:'system',sev:'Cao',text:'Kẹt cơ cấu mô phỏng.',active:true,ack:false,at:a.time});else s.alarms=s.alarms.map(x=>x.id==='JAM-'+b.id?{...x,active:false}:x);}
+      // fault chỉ phản ánh alarm FAULT của CHÍNH block; không suy từ jam/alarm hệ thống khác
+      const id='FAULT-'+b.id;
+      const wasActive=s.alarms.some(x=>x.id===id&&isActiveAlarm(x));
+      if(wasActive){resolveAlarm(id);b.fault=false;}
+      else{activateAlarm({id,block:b.id,cat:'system',sev:'Nghiêm trọng',device:'Sim-Fault',text:'Lỗi thiết bị mô phỏng.',ack:false,at:a.time});b.fault=true;}
+    }else if(a.cmd==='SIM_JAM'){
+      const id='JAM-'+b.id;
+      b.jammed=!s.alarms.some(x=>x.id===id&&isActiveAlarm(x));
+      if(b.jammed)activateAlarm({id,block:b.id,cat:'system',sev:'Cao',device:'Sim-Jam',text:'Kẹt cơ cấu mô phỏng.',ack:false,at:a.time});
+      else resolveAlarm(id);
+    }
     else if(a.cmd==='FORCE'){log(b.id,'Dùng Bypass theo từng cảm biến có thời hạn tại Safety Interlock.');return s;}
     else if(a.cmd!=='PLC')return state;
     refreshBlock(b);syncAlarms(b);log(b.id,cmdLabel[a.cmd]??a.cmd);
@@ -630,5 +659,8 @@ export function reduceSim(state: Sim, a: Action): Sim {
     }
   }
   for(const b of s.blocks){b.bypassed=s.bypasses.filter(x=>x.block===b.id&&x.expiresAt>s.clockMs).map(x=>x.device);refreshBlock(b);}
+  // Giữ mọi lệnh đang hoạt động + 200 lệnh đã kết thúc gần nhất (jobs xếp mới→cũ) để không rò rỉ.
+  let finished=0;
+  s.jobs=s.jobs.filter((j)=>active(j)||finished++<200);
   return s;
 }
