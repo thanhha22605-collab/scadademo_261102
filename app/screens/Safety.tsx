@@ -10,7 +10,7 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
-import { blocked, active } from '@/lib/simulation';
+import { blocked, active, blockLabel } from '@/lib/simulation';
 import {
   Box,
   Badge,
@@ -38,31 +38,85 @@ export default function Safety({
   const b = sim.blocks.find((x) => x.id === selected) ?? sim.blocks[0];
   if (!b) return <EmptyState sim={sim} />;
   const ro = isReadOnly(sim); // nguồn PLC chỉ đọc → khóa mọi thao tác an toàn
+  const bypassTarget = sim.blocks.some((block) => block.id === bypBlock)
+    ? bypBlock
+    : b.id;
   const toggle = (
-    field: 'doorClosed' | 'estop' | 'paused' | 'maintenance' | 'online',
+    field:
+      | 'doorClosed'
+      | 'estop'
+      | 'paused'
+      | 'maintenance'
+      | 'online'
+      | 'photogateClear'
+      | 'limitOk'
+      | 'overloadOk',
   ) => {
     if (ro) return;
     dispatch({ type: 'toggle', block: b.id, field, time: time() });
   };
   const conditions = [
     { label: 'Cửa an toàn đóng', ok: b.doorClosed, detail: 'Đóng kín trước khi vận hành' },
-    { label: 'Không kích hoạt E-Stop', ok: !b.estop, detail: 'Nút dừng khẩn cấp phải nhả' },
-    { label: 'Kết nối bộ điều khiển PLC', ok: b.state !== 'Offline', detail: 'Modbus TCP heartbeat' },
-    { label: 'Không ở chế độ bảo trì', ok: b.state !== 'Bảo trì', detail: 'Maintenance mode phải tắt' },
-    { label: 'Thiết bị không báo lỗi', ok: b.state !== 'Lỗi', detail: 'Không có fault đang treo' },
-    { label: 'Block không bị khóa', ok: !b.locked, detail: 'Lock/Unlock từ Control Panel' },
+    {
+      label: 'Không kích hoạt E-Stop',
+      ok: b.estop === null ? null : !b.estop,
+      detail: 'Nút dừng khẩn cấp phải nhả',
+    },
+    {
+      label: 'Kết nối bộ điều khiển PLC',
+      ok: sim.connection === 'online' && b.online && b.quality === 'good',
+      detail: 'Kiểm tra gateway và FINS heartbeat',
+    },
+    {
+      label: 'Không ở chế độ bảo trì',
+      ok: b.maintenance === null ? null : !b.maintenance,
+      detail: 'Maintenance mode phải tắt',
+    },
+    {
+      label: 'Thiết bị không báo lỗi',
+      ok: b.fault === null || b.jammed === null ? null : !b.fault && !b.jammed,
+      detail: 'Không có fault đang treo',
+    },
+    {
+      label: 'Block không bị khóa',
+      ok: b.locked === null ? null : !b.locked,
+      detail: 'Lock/Unlock từ Control Panel',
+    },
+    {
+      label: 'Liên động đã được reset',
+      ok: b.safetyLatched === null ? null : !b.safetyLatched,
+      detail: 'Sau khi khắc phục nguyên nhân, nhấn START/RESUME tại Control Panel',
+    },
+    {
+      label: 'Photogate không có vật cản',
+      ok: b.photogateClear,
+      bypass: b.bypassed.includes('Photogate - Cảm biến an toàn'),
+      detail: 'Kiểm tra vùng quét Photogate',
+    },
+    {
+      label: 'Cảm biến hành trình hợp lệ',
+      ok: b.limitOk,
+      bypass: b.bypassed.includes('LS-T3 - Cảm biến hành trình'),
+      detail: 'Kiểm tra LS-T3 và dây tín hiệu',
+    },
+    {
+      label: 'Motor nâng không quá tải',
+      ok: b.overloadOk,
+      bypass: b.bypassed.includes('Lift Motor - Quá tải động cơ nâng'),
+      detail: 'Kiểm tra tải và dòng motor nâng',
+    },
   ];
-  const anyBypass = sim.bypasses.length > 0 || sim.blocks.some((x) => x.forced);
+  const anyBypass = !ro && (sim.bypasses.length > 0 || sim.blocks.some((x) => x.forced));
   return (
     <>
       <div className="occ-badges">
         <ConnectionBadge sim={sim} />
       </div>
       {ro && (
-        <div className="notice amber" role="status">
+        <output className="notice amber">
           Nguồn dữ liệu là PLC (gateway chỉ đọc) — không thể đổi tín hiệu an toàn
           hay tạo Bypass từ đây; màn hình chỉ để giám sát liên động.
-        </div>
+        </output>
       )}
       {anyBypass && (
         <div className="force-banner">
@@ -79,8 +133,12 @@ export default function Safety({
         onPick={setSelected}
       />
       <Box
-        title={'Ma trận điều kiện an toàn · Block ' + b.id}
-        aside={<span className="muted">Quét chu kỳ: 500ms</span>}
+        title={'Ma trận điều kiện an toàn · ' + blockLabel(b)}
+        aside={
+          <span className="muted">
+            {sim.source === 'sim' ? 'Chu kỳ mô phỏng: 1.000ms' : 'Theo chu kỳ gateway'}
+          </span>
+        }
       >
         <div className="table-scroll">
           <table className="grid-table">
@@ -98,13 +156,31 @@ export default function Safety({
                 <tr key={c.label}>
                   <td>{String(i + 1).padStart(2, '0')}</td>
                   <td>{c.label}</td>
-                  <td>Block {b.id}</td>
+                  <td>{blockLabel(b)}</td>
                   <td>
-                    <Badge tone={c.ok ? 'green' : 'red'}>
-                      {c.ok ? 'OK' : 'LỖI'}
+                    <Badge
+                      tone={
+                        c.bypass ? 'amber' : c.ok === null ? 'amber' : c.ok ? 'green' : 'red'
+                      }
+                    >
+                      {c.bypass
+                        ? 'BYPASS'
+                        : c.ok === null
+                          ? 'CHƯA MAP'
+                          : c.ok
+                            ? 'OK'
+                            : 'LỖI'}
                     </Badge>
                   </td>
-                  <td>{c.ok ? 'Đạt điều kiện' : c.detail}</td>
+                  <td>
+                    {c.bypass
+                      ? 'Đang bypass có thời hạn'
+                      : c.ok === null
+                        ? 'Gateway chưa cung cấp tín hiệu này'
+                        : c.ok
+                          ? 'Đạt điều kiện'
+                          : c.detail}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -117,26 +193,33 @@ export default function Safety({
         </div>
       </Box>
       <div className="two-col">
-        <Box title={'Điều khiển tín hiệu an toàn · Block ' + b.id}>
+        <Box title={'Điều khiển tín hiệu an toàn · ' + blockLabel(b)}>
           <div className="safety-grid one">
             {[
-              { field: 'doorClosed' as const, label: 'Cửa an toàn đóng', value: b.doorClosed },
-              { field: 'estop' as const, label: 'Dừng khẩn cấp (E-STOP)', value: b.estop },
-              { field: 'online' as const, label: 'Kết nối bộ điều khiển', value: b.state !== 'Offline' },
-              { field: 'maintenance' as const, label: 'Chế độ bảo trì', value: b.state === 'Bảo trì' },
+              { field: 'doorClosed' as const, label: 'Cửa an toàn đóng', value: b.doorClosed, known: b.doorClosed !== null },
+              { field: 'estop' as const, label: 'Dừng khẩn cấp (E-STOP)', value: b.estop, known: b.estop !== null },
+              { field: 'online' as const, label: 'Kết nối bộ điều khiển', value: b.online, known: true },
+              { field: 'maintenance' as const, label: 'Chế độ bảo trì', value: b.maintenance, known: b.maintenance !== null },
+              { field: 'photogateClear' as const, label: 'Photogate thông thoáng', value: b.photogateClear, known: b.photogateClear !== null },
+              { field: 'limitOk' as const, label: 'Cảm biến hành trình OK', value: b.limitOk, known: b.limitOk !== null },
+              { field: 'overloadOk' as const, label: 'Motor nâng không quá tải', value: b.overloadOk, known: b.overloadOk !== null },
             ].map((x) => (
               <div className="safety-card" key={x.field}>
                 <h3>{x.label}</h3>
-                <Switch
-                  aria-label={x.label}
-                  checked={x.value}
-                  disabled={
-                    ro ||
-                    (x.field === 'maintenance' &&
-                      sim.jobs.some((j) => j.block === b.id && active(j)))
-                  }
-                  onCheckedChange={() => toggle(x.field)}
-                />
+                {x.known ? (
+                  <Switch
+                    aria-label={x.label}
+                    checked={x.value === true}
+                    disabled={
+                      ro ||
+                      (x.field === 'maintenance' &&
+                        sim.jobs.some((j) => j.block === b.id && active(j)))
+                    }
+                    onCheckedChange={() => toggle(x.field)}
+                  />
+                ) : (
+                  <Badge tone="amber">CHƯA MAP</Badge>
+                )}
               </div>
             ))}
           </div>
@@ -154,9 +237,9 @@ export default function Safety({
           />
           <Choice
             label="Vị trí Block đỗ"
-            value={bypBlock}
+            value={bypassTarget}
             onChange={setBypBlock}
-            options={sim.blocks.map((x) => ({ value: x.id, label: 'Block ' + x.id }))}
+            options={sim.blocks.map((x) => ({ value: x.id, label: blockLabel(x) }))}
           />
           <Choice
             label="Thời gian tự động tắt (Timeout)"
@@ -174,6 +257,7 @@ export default function Safety({
             <input
               placeholder="Vd: Bảo trì cơ khí định kỳ, sensor báo lỗi giả…"
               value={bypReason}
+              disabled={ro}
               onChange={(e) => setBypReason(e.target.value)}
             />
           </label>
@@ -191,7 +275,7 @@ export default function Safety({
                   type: 'bypass',
                   op: 'add',
                   device: bypDevice,
-                  block: bypBlock,
+                  block: bypassTarget,
                   timeout: Number(bypTimeout),
                   reason: bypReason.trim(),
                   time: time(),
@@ -204,9 +288,9 @@ export default function Safety({
             </button>
           </div>
           {bypNote && (
-            <div className="notice amber" role="status">
+            <output className="notice amber">
               {bypNote}
-            </div>
+            </output>
           )}
         </Box>
       </div>
@@ -255,7 +339,9 @@ export default function Safety({
         {!sim.bypasses.length && (
           <div className="empty-state">
             <ShieldCheck />
-            Không có sensor nào đang bị bypass.
+            {ro
+              ? 'Gateway chưa cung cấp trạng thái bypass/force của PLC.'
+              : 'Không có sensor nào đang bị bypass.'}
           </div>
         )}
       </Box>

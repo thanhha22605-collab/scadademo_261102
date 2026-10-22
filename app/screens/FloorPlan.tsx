@@ -103,7 +103,8 @@ export default function FloorPlan() {
         </span>
       </div>
       <div className="floor-svg-wrap">
-        <svg viewBox="0 0 1000 620" role="img" aria-label="Sơ đồ mặt bằng SCADA 6 phân khu">
+        <svg viewBox="0 0 1000 620" aria-label="Sơ đồ mặt bằng SCADA 6 phân khu">
+          <title>Sơ đồ mặt bằng SCADA 6 phân khu</title>
           <defs>
             <pattern id="fgrid" width="26" height="26" patternUnits="userSpaceOnUse">
               <path d="M26 0 L0 0 0 26" fill="none" stroke="#16273a" strokeWidth="1" />

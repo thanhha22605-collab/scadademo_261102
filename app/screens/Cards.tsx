@@ -42,9 +42,9 @@ export default function Cards() {
         pad
       >
         {note && (
-          <div className="notice green" role="status">
+          <output className="notice green">
             {note}
-          </div>
+          </output>
         )}
         <div className="table-scroll">
           <table className="grid-table">

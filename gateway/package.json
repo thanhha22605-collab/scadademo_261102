@@ -7,6 +7,8 @@
   "scripts": {
     "start": "node index.omron.multi.mjs",
     "start:omron-multi": "node index.omron.multi.mjs",
+    "test": "node test-core.mjs && node test-fins.mjs",
+    "test:core": "node test-core.mjs",
     "test:fins": "node test-fins.mjs",
     "check": "node check.mjs",
     "gen-countbits": "node gen-countbits.mjs"

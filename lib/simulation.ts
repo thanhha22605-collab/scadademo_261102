@@ -4,9 +4,9 @@ export type Quality = 'good' | 'stale' | 'unknown';
 export type Block = {
   name?: string;
   online: boolean;
-  fault: boolean;
-  maintenance: boolean;
-  jammed: boolean;
+  fault: boolean | null;
+  maintenance: boolean | null;
+  jammed: boolean | null;
   quality: Quality;
   photogateClear: boolean | null;
   limitOk: boolean | null;
@@ -18,11 +18,12 @@ export type Block = {
   zone: string;
   capacity: number;
   state: string;
-  mode: Mode;
-  doorClosed: boolean;
-  estop: boolean;
-  paused: boolean;
-  locked: boolean;
+  mode: Mode | null;
+  doorClosed: boolean | null;
+  estop: boolean | null;
+  paused: boolean | null;
+  safetyLatched: boolean | null;
+  locked: boolean | null;
   forced: boolean;
   slots: (string | null)[];
   kinds: (VType | null)[];
@@ -44,6 +45,7 @@ export type Alarm = {
   resolvedAt?: string;
   id: string;
   block: string;
+  zone?: string;
   text: string;
   ack: boolean;
   cat?: 'operator' | 'system' | 'maintenance';
@@ -80,6 +82,8 @@ export const zoneLabel: Record<string, string> = {
   C: 'Zone C – Hầm B3',
 };
 export const zoneTag: Record<string, string> = { A: 'Z1', B: 'Z2', C: 'Z3' };
+export const blockLabel = (b: Pick<Block, 'id' | 'name'>) =>
+  b.name?.trim() || `Block ${b.id}`;
 export const specs = [
   { id: 'A-01', zone: 'A', count: 16, capacity: 20, state: 'Bình thường' },
   { id: 'A-02', zone: 'A', count: 18, capacity: 20, state: 'Bình thường' },
@@ -144,6 +148,7 @@ export function createSim(): Sim {
       doorClosed: b.id !== 'A-03',
       estop: b.id === 'A-04',
       paused: false,
+      safetyLatched: false,
       locked: false,
       forced: false,
       slots,
@@ -336,29 +341,36 @@ export function active(j: Job) {
 }
 export function refreshBlock(b: Block): Block {
   b.forced=b.bypassed.length>0;
-  b.state=!b.online?'Offline':b.fault||b.jammed?'Lỗi':b.maintenance?'Bảo trì':b.estop||!b.doorClosed||b.photogateClear!==true||b.limitOk!==true||b.overloadOk!==true?'Cảnh báo':'Bình thường';
+  b.state=!b.online?'Offline':b.fault===true||b.jammed===true?'Lỗi':b.maintenance===true?'Bảo trì':b.estop===true||b.doorClosed===false||b.photogateClear===false||b.limitOk===false||b.overloadOk===false?'Cảnh báo':'Bình thường';
   return b;
 }
 export function interlockReason(b: Block) {
-  if(b.estop)return 'Dừng khẩn cấp';
   if(!b.online)return 'Mất kết nối';
   if(b.quality!=='good')return 'Dữ liệu chưa xác nhận';
+  if(b.estop===null)return 'Tín hiệu E-Stop chưa được ánh xạ';
+  if(b.estop)return 'Dừng khẩn cấp';
+  if(b.doorClosed===null)return 'Tín hiệu cửa chưa được ánh xạ';
   if(!b.doorClosed)return 'Cửa chưa đóng';
+  if(b.fault===null)return 'Tín hiệu lỗi thiết bị chưa được ánh xạ';
   if(b.fault)return 'Sự cố thiết bị';
+  if(b.jammed===null)return 'Tín hiệu kẹt cơ cấu chưa được ánh xạ';
   if(b.jammed)return 'Kẹt cơ cấu';
+  if(b.maintenance===null)return 'Trạng thái bảo trì chưa được ánh xạ';
   if(b.maintenance)return 'Đang bảo trì';
-  if(b.photogateClear===null)return 'Tín hiệu Photogate chưa được ánh xạ';
-  if(b.limitOk===null)return 'Tín hiệu hành trình chưa được ánh xạ';
-  if(b.overloadOk===null)return 'Tín hiệu quá tải chưa được ánh xạ';
-  if(!b.photogateClear&&!b.bypassed.includes('Photogate - Cảm biến an toàn'))return 'Vật cản tại Photogate';
-  if(!b.limitOk&&!b.bypassed.includes('LS-T3 - Cảm biến hành trình'))return 'Lỗi cảm biến hành trình';
-  if(!b.overloadOk&&!b.bypassed.includes('Lift Motor - Quá tải động cơ nâng'))return 'Quá tải động cơ';
+  // Tín hiệu chưa ánh xạ (null) KHÔNG chặn vận hành/giám sát; chỉ chặn khi xác định = false.
+  if(b.photogateClear===false&&!b.bypassed.includes('Photogate - Cảm biến an toàn'))return 'Vật cản tại Photogate';
+  if(b.limitOk===false&&!b.bypassed.includes('LS-T3 - Cảm biến hành trình'))return 'Lỗi cảm biến hành trình';
+  if(b.overloadOk===false&&!b.bypassed.includes('Lift Motor - Quá tải động cơ nâng'))return 'Quá tải động cơ';
   return '';
 }
 export function blocked(b: Block) {
   const reason=interlockReason(b);
   if(reason)return reason;
+  if(b.locked===null)return 'Trạng thái khóa chưa được ánh xạ';
   if(b.locked)return 'Block đã khóa';
+  if(b.safetyLatched===null)return 'Trạng thái chốt liên động chưa được ánh xạ';
+  if(b.safetyLatched)return 'Liên động đã tác động — cần START/RESUME';
+  if(b.paused===null)return 'Trạng thái chạy/dừng chưa được ánh xạ';
   if(b.paused)return 'Tạm dừng — cần START/RESUME';
   return '';
 }
@@ -453,7 +465,6 @@ const cmdLabel: Record<string, string> = {
   LOCK: 'Khóa Block',
   UNLOCK: 'Mở khóa Block',
   DISABLE_MAINT: 'Kết thúc chế độ bảo trì',
-  FORCE: 'Cưỡng bức Admin (Force Mode)',
   SIM_FAULT: 'Giả lập lỗi thiết bị',
   SIM_JAM: 'Giả lập kẹt cơ cấu',
   PLC: 'Gửi lệnh trực tiếp xuống PLC',
@@ -468,7 +479,7 @@ export function reduceSim(state: Sim, a: Action): Sim {
       const previous=state.alarms.find(x=>x.id===alarm.id&&isActiveAlarm(x));
       return previous?{...alarm,ack:previous.ack,ackBy:previous.ackBy,at:previous.at}:alarm;
     });
-    const resolved=state.alarms.filter(x=>isActiveAlarm(x)&&!next.alarms.some(a=>a.id===x.id)).map(x=>({...x,active:false}));
+    const resolved=state.alarms.filter(x=>isActiveAlarm(x)&&!next.alarms.some(a=>a.id===x.id)).map(x=>({...x,active:false,resolvedAt:new Date(next.clockMs).toLocaleString('vi-VN')}));
     next.alarms=[...next.alarms,...resolved,...state.alarms.filter(x=>!isActiveAlarm(x)&&!next.alarms.some(a=>a.id===x.id))].slice(0,500);
     return next;
   }
@@ -504,7 +515,7 @@ export function reduceSim(state: Sim, a: Action): Sim {
       'Cảm biến cửa chưa đóng. Khóa lệnh vận hành.',
       { cat: 'operator', sev: 'Cao', code: 'W-0302', device: 'HMI-Panel' },
     );
-    sync(`STOP-${b.id}`, b.estop, 'Dừng khẩn cấp đang kích hoạt.', {
+    sync(`STOP-${b.id}`, b.estop === true, 'Dừng khẩn cấp đang kích hoạt.', {
       cat: 'operator',
       sev: 'Nghiêm trọng',
       code: 'E-0408',
@@ -584,7 +595,7 @@ export function reduceSim(state: Sim, a: Action): Sim {
       if(s.jobs.some(j=>j.block===b.id&&active(j)))return state;
       b.maintenance=!b.maintenance;if(!b.estop)b.mode=b.maintenance?'Maint':'Auto';
     }else {b[a.field]=!b[a.field];if(a.field==='estop')b.mode=b.estop?'EStop':b.maintenance?'Maint':'Auto';}
-    // KHÔNG tự set paused: interlock đã đóng băng job qua blocked(); khi interlock hết, job tự chạy lại.
+    if(interlockReason(b)&&s.jobs.some(j=>j.block===b.id&&j.status==='Đang chạy'))b.safetyLatched=true;
     refreshBlock(b);syncAlarms(b);log(b.id,'Thay đổi tín hiệu '+a.field);
   }
   if(a.type==='mode'){
@@ -592,6 +603,7 @@ export function reduceSim(state: Sim, a: Action): Sim {
     if(a.mode==='Maint'&&s.jobs.some(j=>j.block===b.id&&active(j)))return state;
     if(b.estop&&a.mode!=='EStop'){log(b.id,'Từ chối đổi mode: cần nhả E-STOP trước.');return s;}
     b.mode=a.mode;if(a.mode==='EStop')b.estop=true;else b.maintenance=a.mode==='Maint';
+    if(interlockReason(b)&&s.jobs.some(j=>j.block===b.id&&j.status==='Đang chạy'))b.safetyLatched=true;
     refreshBlock(b);syncAlarms(b);log(b.id,'Chuyển mode '+a.mode);
   }
   if(a.type==='command'){
@@ -599,7 +611,7 @@ export function reduceSim(state: Sim, a: Action): Sim {
     if(a.cmd==='START'||a.cmd==='RESUME'){
       const reason=interlockReason(b)|| (b.locked?'Block đã khóa':'');
       if(reason){log(b.id,`Từ chối ${a.cmd}: ${reason}.`);return s;}
-      b.paused=false;
+      b.paused=false;b.safetyLatched=false;
     }
     else if(a.cmd==='STOP'||a.cmd==='PAUSE')b.paused=true;
     else if(a.cmd==='LOCK')b.locked=true; // 'locked' đã chặn tick; không cần pause thêm (tránh kẹt pause sau UNLOCK)
@@ -609,15 +621,17 @@ export function reduceSim(state: Sim, a: Action): Sim {
       // fault chỉ phản ánh alarm FAULT của CHÍNH block; không suy từ jam/alarm hệ thống khác
       const id='FAULT-'+b.id;
       const wasActive=s.alarms.some(x=>x.id===id&&isActiveAlarm(x));
-      if(wasActive){resolveAlarm(id);b.fault=false;}
-      else{activateAlarm({id,block:b.id,cat:'system',sev:'Nghiêm trọng',device:'Sim-Fault',text:'Lỗi thiết bị mô phỏng.',ack:false,at:a.time});b.fault=true;}
+      if(wasActive)resolveAlarm(id);
+      else activateAlarm({id,block:b.id,cat:'system',sev:'Nghiêm trọng',device:'Sim-Fault',text:'Lỗi thiết bị mô phỏng.',ack:false,at:a.time});
+      b.fault=s.alarms.some(x=>x.block===b.id&&x.cat==='system'&&isActiveAlarm(x)&&x.device!=='PLC-Link'&&x.device!=='AI-VDS'&&x.device!=='Sim-Jam');
+      if(b.fault&&s.jobs.some(j=>j.block===b.id&&j.status==='Đang chạy'))b.safetyLatched=true;
     }else if(a.cmd==='SIM_JAM'){
       const id='JAM-'+b.id;
       b.jammed=!s.alarms.some(x=>x.id===id&&isActiveAlarm(x));
       if(b.jammed)activateAlarm({id,block:b.id,cat:'system',sev:'Cao',device:'Sim-Jam',text:'Kẹt cơ cấu mô phỏng.',ack:false,at:a.time});
       else resolveAlarm(id);
+      if(b.jammed&&s.jobs.some(j=>j.block===b.id&&j.status==='Đang chạy'))b.safetyLatched=true;
     }
-    else if(a.cmd==='FORCE'){log(b.id,'Dùng Bypass theo từng cảm biến có thời hạn tại Safety Interlock.');return s;}
     else if(a.cmd!=='PLC')return state;
     refreshBlock(b);syncAlarms(b);log(b.id,cmdLabel[a.cmd]??a.cmd);
   }
@@ -658,7 +672,11 @@ export function reduceSim(state: Sim, a: Action): Sim {
       log(j.block, `Từ chối lệnh #${j.id} · ${j.plate}`);
     }
   }
-  for(const b of s.blocks){b.bypassed=s.bypasses.filter(x=>x.block===b.id&&x.expiresAt>s.clockMs).map(x=>x.device);refreshBlock(b);}
+  for(const b of s.blocks){
+    b.bypassed=s.bypasses.filter(x=>x.block===b.id&&x.expiresAt>s.clockMs).map(x=>x.device);
+    if(interlockReason(b)&&s.jobs.some(j=>j.block===b.id&&j.status==='Đang chạy'))b.safetyLatched=true;
+    refreshBlock(b);
+  }
   // Giữ mọi lệnh đang hoạt động + 200 lệnh đã kết thúc gần nhất (jobs xếp mới→cũ) để không rò rỉ.
   let finished=0;
   s.jobs=s.jobs.filter((j)=>active(j)||finished++<200);

@@ -16,6 +16,7 @@ import {
   countOf,
   availableOf,
   isActiveAlarm,
+  blockLabel,
 } from '@/lib/simulation';
 import {
   Panel,
@@ -32,9 +33,9 @@ function Trend() {
       <div className="chart-label">TỶ LỆ LẤP ĐẦY (%)</div>
       <svg
         viewBox="0 0 760 205"
-        role="img"
         aria-label="Biểu đồ dữ liệu mẫu mật độ đỗ xe các Zone từ 06 giờ đến 12 giờ"
       >
+        <title>Biểu đồ dữ liệu mẫu mật độ đỗ xe từ 06 giờ đến 12 giờ</title>
         <defs>
           <linearGradient id="fade" x1="0" x2="0" y1="0" y2="1">
             <stop offset="0%" stopColor="#3b82f6" stopOpacity=".2" />
@@ -124,12 +125,28 @@ const alarmCatName: Record<string, string> = {
   maintenance: 'Đến hạn bảo trì',
 };
 function ScadaAlarmsLive({ sim, dispatch }: Pick<ScreenProps, 'sim' | 'dispatch'>) {
-  const activeAlarms = sim.alarms.filter((a) => isActiveAlarm(a) && !a.ack);
+  const severity = { 'Nghiêm trọng': 4, Cao: 3, 'Trung bình': 2, Thấp: 1 };
+  const activeAlarms = sim.alarms
+    .filter((a) => isActiveAlarm(a))
+    .sort(
+      (a, b) =>
+        Number(a.ack) - Number(b.ack) ||
+        (severity[b.sev ?? 'Thấp'] ?? 0) - (severity[a.sev ?? 'Thấp'] ?? 0),
+    );
   const cnt = (c: string) => activeAlarms.filter((a) => a.cat === c).length;
+  const sourceName = (id: string) => {
+    if (id === 'Gateway') return 'Gateway';
+    const block = sim.blocks.find((item) => item.id === id);
+    return block ? blockLabel(block) : `Block ${id}`;
+  };
   return (
     <Panel
       title="Hệ thống cảnh báo thời gian thực (SCADA Alarms Live)"
-      aside={<span className="muted">Chu kỳ cập nhật: 15s</span>}
+      aside={
+        <span className="muted">
+          {sim.source === 'sim' ? 'Chu kỳ mô phỏng: 1s' : 'Cập nhật theo gateway'}
+        </span>
+      }
     >
       <div className="alarms-live-cats">
         <div className="alive-cat amber">
@@ -185,12 +202,14 @@ function ScadaAlarmsLive({ sim, dispatch }: Pick<ScreenProps, 'sim' | 'dispatch'
                   </Badge>
                 </td>
                 <td>
-                  {zoneTag[a.block[0]]} · Block {a.block} · {a.device ?? '—'}
+                  {(a.zone && `Zone ${a.zone}`) || zoneTag[a.block[0]] || 'Hệ thống'} ·{' '}
+                  {sourceName(a.block)} · {a.device ?? '—'}
                 </td>
                 <td>{a.text}</td>
                 <td>
                   <button
                     className="secondary"
+                    disabled={a.ack}
                     onClick={() =>
                       dispatch({
                         type: 'ack',
@@ -199,7 +218,7 @@ function ScadaAlarmsLive({ sim, dispatch }: Pick<ScreenProps, 'sim' | 'dispatch'
                       })
                     }
                   >
-                    Xác nhận
+                    {a.ack ? 'Đã ACK' : 'Xác nhận'}
                   </button>
                 </td>
               </tr>
@@ -226,16 +245,24 @@ export default function Dashboard({
     state: status(b, sim),
   }));
   const sum = summary(sim);
-  const activeAlarms = sim.alarms.filter((a) => isActiveAlarm(a) && !a.ack).length;
-  const firstAlarm = sim.alarms.find((a) => isActiveAlarm(a) && !a.ack);
-  const downCount = sim.blocks.filter((b) => !b.online || b.fault).length;
+  const activeRows = sim.alarms.filter((a) => isActiveAlarm(a));
+  const activeAlarms = activeRows.length;
+  const firstAlarm = activeRows.find((a) => !a.ack) ?? activeRows[0];
+  const downCount = sim.blocks.filter(
+    (b) => !b.online || b.fault || b.quality !== 'good',
+  ).length;
   /* Kết nối: chế độ sim là dữ liệu mẫu; nguồn PLC phản ánh trạng thái thật. */
   const conn =
     sim.source === 'sim'
       ? connectivity
       : [
           { name: 'Gateway', ok: sim.connection === 'online' },
-          { name: 'PLC (tổng)', ok: sim.blocks.some((b) => b.online) },
+          {
+            name: 'PLC (tổng)',
+            ok:
+              sim.connection === 'online' &&
+              sim.blocks.some((b) => b.online && b.quality === 'good'),
+          },
           {
             name: 'Chất lượng dữ liệu',
             ok: sim.blocks.length > 0 && sim.blocks.every((b) => b.quality === 'good'),
@@ -263,7 +290,7 @@ export default function Dashboard({
           { label: 'Tổng Block', value: String(sim.blocks.length), sub: sum.zones.length + ' phân khu', icon: Layers, tone: 'blue' },
           { label: 'Tổng Pallet', value: String(capacity), sub: 'Sức chứa toàn hệ thống', icon: CircleParking, tone: 'purple' },
           { label: 'Xe đang đỗ', value: String(sum.total), sub: percent(sum.total, capacity) + '% công suất' + (sum.unknown ? ' · có ô chưa rõ' : ''), icon: Car, tone: 'green' },
-          { label: 'Vị trí khả dụng', value: String(sum.available), sub: Math.max(0, capacity - sum.total - sum.available) + ' vị trí bị khóa/đặt chỗ', icon: Grid2X2, tone: 'blue' },
+          { label: 'Vị trí khả dụng', value: String(sum.available), sub: Math.max(0, capacity - sum.total - sum.available) + ' vị trí chưa khả dụng/chưa rõ', icon: Grid2X2, tone: 'blue' },
           { label: 'Xe SUV', value: String(sum.suv), sub: percent(sum.suv, sum.total) + '% tổng số xe', icon: Car, tone: 'amber' },
           { label: 'Xe Sedan', value: String(sum.sedan), sub: sum.unclassified > 0 ? sum.unclassified + ' xe chưa phân loại' : percent(sum.sedan, sum.total) + '% tổng số xe', icon: Car, tone: 'green' },
         ].map((m) => (
@@ -349,7 +376,7 @@ export default function Dashboard({
         title="Trạng thái các Block"
         aside={
           <span className="muted">
-            {downCount} block lỗi/offline <ChevronRight size={14} />
+            {downCount} block lỗi/offline/dữ liệu xấu <ChevronRight size={14} />
           </span>
         }
       >
@@ -368,7 +395,7 @@ export default function Dashboard({
                   <Layers size={19} />
                 </span>
                 <span>
-                  Block {b.name ?? b.id}
+                  {blockLabel(b)}
                   <small>{zoneTag[b.zone] ?? `Zone ${b.zone}`}</small>
                 </span>
                 <ChevronRight size={15} />

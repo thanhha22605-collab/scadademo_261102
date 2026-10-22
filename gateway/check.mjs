@@ -75,5 +75,5 @@ async function tick() {
 
 console.log(`Dò thanh ghi ${ip}:${port}/${protocol} — nhấn Ctrl+C để dừng.`);
 console.log('Mẹo: tác động cảm biến/nút (mở cửa, nhấn E-Stop…) rồi xem Ô/BIT nào đổi -> đó là địa chỉ.');
-tick();
+void tick();
 setInterval(tick, 1000);

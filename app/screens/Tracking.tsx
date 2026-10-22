@@ -9,25 +9,43 @@ import {
   TableRow,
   TableCell,
 } from '@/components/ui/table';
-import { Box, Badge, Tag, type ScreenProps } from './shared';
+import { countOf, blockLabel } from '@/lib/simulation';
+import {
+  Box,
+  Badge,
+  Tag,
+  ConnectionBadge,
+  isReadOnly,
+  type ScreenProps,
+} from './shared';
 
 export default function Tracking({ sim }: ScreenProps) {
   const [query, setQuery] = useState('');
-  const cars = sim.blocks
+  const allCars = sim.blocks
     .flatMap((b) =>
       b.slots.flatMap((plate, i) =>
         plate
-          ? [{ plate, block: b.id, zone: b.zone, slot: i, kind: b.kinds[i] }]
+          ? [{ plate, block: b.id, blockName: blockLabel(b), zone: b.zone, slot: i, kind: b.kinds[i] }]
           : [],
       ),
-    )
+    );
+  const cars = allCars
     .filter((c) =>
       `${c.plate} ${c.block}`.toLowerCase().includes(query.toLowerCase()),
     );
+  const readOnly = isReadOnly(sim);
+  const untracked = Math.max(
+    0,
+    sim.blocks.reduce((total, block) => total + (countOf(block) ?? 0), 0) -
+      allCars.length,
+  );
   return (
     <>
       <div className="two-col">
         <Box title="Tìm kiếm xe & định vị nhanh">
+          <div className="occ-badges">
+            <ConnectionBadge sim={sim} />
+          </div>
           <label className="search-field">
             <Search size={17} />
             <input
@@ -39,11 +57,15 @@ export default function Tracking({ sim }: ScreenProps) {
           </label>
           <div className="control-line">
             <span>Đầu đọc cổng vào (In-Gate)</span>
-            <Badge tone="green">ONLINE</Badge>
+            <Badge tone={readOnly ? 'amber' : 'blue'}>
+              {readOnly ? 'CHƯA TÍCH HỢP' : 'MÔ PHỎNG'}
+            </Badge>
           </div>
           <div className="control-line">
             <span>Đầu đọc cổng ra (Out-Gate)</span>
-            <Badge tone="green">ONLINE</Badge>
+            <Badge tone={readOnly ? 'amber' : 'blue'}>
+              {readOnly ? 'CHƯA TÍCH HỢP' : 'MÔ PHỎNG'}
+            </Badge>
           </div>
         </Box>
         <Box title="Hành trình Pallet di chuyển">
@@ -72,6 +94,12 @@ export default function Tracking({ sim }: ScreenProps) {
         title="Truy vết xe & pallet"
         aside={<span className="muted">{cars.length} xe</span>}
       >
+        {readOnly && untracked > 0 && (
+          <div className="notice amber">
+            PLC báo có {untracked} xe nhưng gateway chưa nhận biển số/RFID. Các xe
+            này không được đưa vào bảng để tránh tạo dữ liệu giả.
+          </div>
+        )}
         <Table>
           <TableHeader>
             <TableRow>
@@ -84,14 +112,14 @@ export default function Tracking({ sim }: ScreenProps) {
           </TableHeader>
           <TableBody>
             {cars.map((c) => (
-              <TableRow key={c.plate}>
+              <TableRow key={`${c.block}-${c.slot}`}>
                 <TableCell className="mono">{c.plate}</TableCell>
                 <TableCell>{c.kind ?? '—'}</TableCell>
                 <TableCell>Zone {c.zone}</TableCell>
-                <TableCell>{c.block}</TableCell>
+                <TableCell>{c.blockName}</TableCell>
                 <TableCell>P{String(c.slot + 1).padStart(2, '0')}</TableCell>
                 <TableCell>
-                  <Tag text="Đang chạy" />
+                  <Tag text="Đang đỗ" />
                 </TableCell>
               </TableRow>
             ))}

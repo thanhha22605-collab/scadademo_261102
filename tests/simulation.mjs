@@ -43,6 +43,18 @@ s = reduceSim(s, {
   field: 'doorClosed',
   time: 'test',
 });
+assert.equal(
+  blocked(s.blocks[0]),
+  'Liên động đã tác động — cần START/RESUME',
+);
+for (let i = 0; i < 3; i++) s = reduceSim(s, { type: 'tick', time: 'test' });
+assert.equal(s.jobs[0].progress, 10, 'không tự chạy lại sau khi cửa đóng');
+s = reduceSim(s, {
+  type: 'command',
+  block: 'A-01',
+  cmd: 'RESUME',
+  time: 'test',
+});
 for (let i = 0; i < 9; i++) s = reduceSim(s, { type: 'tick', time: 'test' });
 assert.equal(s.jobs[0].status, 'Hoàn tất');
 assert.equal(s.blocks[0].slots[16], '51H-999.99');
@@ -65,6 +77,71 @@ s = reduceSim(s, {
 });
 s = reduceSim(s, { type: 'tick', time: 'test' });
 assert.equal(s.jobs[0].progress, 0);
+
+/* --- Hồi quy: VIP không cướp job đang chạy trong cùng Block --- */
+{
+  let queue = createSim();
+  queue.jobs.unshift({
+    id: 999,
+    block: 'A-02',
+    slot: 19,
+    plate: '51H-888.88',
+    kind: 'in',
+    progress: 0,
+    status: 'Chờ xử lý',
+    priority: 'VIP',
+    hold: false,
+  });
+  queue = reduceSim(queue, { type: 'tick', time: 't' });
+  assert.equal(queue.jobs.find((job) => job.id === 1).progress, 55);
+  assert.equal(queue.jobs.find((job) => job.id === 999).progress, 0);
+  assert.equal(queue.jobs.filter((job) => job.block === 'A-02' && job.status === 'Đang chạy').length, 1);
+}
+
+/* --- Hồi quy: ACK không giải lỗi và reconnect không xóa fault --- */
+{
+  let alarms = createSim();
+  alarms = reduceSim(alarms, { type: 'ack', id: 'SYS-FLT-11', time: 't' });
+  const alarm = alarms.alarms.find((item) => item.id === 'SYS-FLT-11');
+  assert.equal(alarm.ack, true);
+  assert.equal(isActiveAlarm(alarm), true);
+  const before = alarms.blocks.find((block) => block.id === 'A-04');
+  assert.equal(before.fault, true);
+  alarms = reduceSim(alarms, { type: 'toggle', block: 'A-04', field: 'online', time: 't' });
+  alarms = reduceSim(alarms, { type: 'toggle', block: 'A-04', field: 'online', time: 't' });
+  assert.equal(alarms.blocks.find((block) => block.id === 'A-04').fault, true);
+}
+
+/* --- Hồi quy: Bypass đúng cảm biến và tự hết hạn --- */
+{
+  let bypass = createSim();
+  bypass = reduceSim(bypass, { type: 'toggle', block: 'A-01', field: 'photogateClear', time: 't' });
+  assert.match(blocked(bypass.blocks[0]), /Photogate/);
+  bypass = reduceSim(bypass, {
+    type: 'bypass',
+    op: 'add',
+    device: 'Photogate - Cảm biến an toàn',
+    block: 'A-01',
+    timeout: 5,
+    reason: 'Kiểm thử',
+    time: 't',
+  });
+  assert.equal(blocked(bypass.blocks[0]), '');
+  bypass = reduceSim(bypass, {
+    type: 'tick',
+    time: 't',
+    nowMs: bypass.clockMs + 5 * 60_000 + 1,
+  });
+  assert.match(blocked(bypass.blocks[0]), /Photogate/);
+}
+
+/* --- Hồi quy: bật/tắt lỗi mô phỏng không tạo ID alarm trùng --- */
+{
+  let alarms = createSim();
+  for (let index = 0; index < 4; index++)
+    alarms = reduceSim(alarms, { type: 'command', block: 'A-01', cmd: 'SIM_FAULT', time: 't' });
+  assert.equal(alarms.alarms.filter((alarm) => alarm.id === 'FAULT-A-01').length, 1);
+}
 s = reduceSim(s, {
   type: 'toggle',
   block: 'A-01',
@@ -131,5 +208,5 @@ assert.equal(s.jobs[0].progress, 0);
 }
 
 console.log(
-  'PASS: occupancy, dispatch, duplicates, queue, door interlock, acknowledgement, completion, retrieval, cancellation, invalid input, maintenance, E-STOP, offline, fault/jam decouple (#1), lock-unlock (#5), alarm resolve (#2), job pruning (#4).',
+  'PASS: occupancy, dispatch, queue, latched interlocks, explicit resume, ACK semantics, reconnect fault retention, VIP serialization, bypass expiry, unique alarms, completion, retrieval, cancellation, validation, maintenance, E-STOP, offline, fault/jam decouple, lock-unlock, alarm resolve, job pruning.',
 );

@@ -5,7 +5,14 @@ export function statusTone(text: string): string {
     return 'green';
   if (text === 'Đang chạy') return 'blue';
   if (text === 'Bảo trì' || text === 'Đã hủy') return 'purple';
-  if (text === 'Lỗi' || text === 'Offline' || text === 'Dừng khẩn cấp')
+  if (
+    text === 'Lỗi' ||
+    text === 'Offline' ||
+    text.includes('Dừng khẩn cấp') ||
+    text.includes('Mất kết nối') ||
+    text.includes('Sự cố thiết bị') ||
+    text.includes('Kẹt cơ cấu')
+  )
     return 'red';
   return 'amber';
 }

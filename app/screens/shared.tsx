@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/select';
 import {
   createSim,
+  blockLabel,
   reduceSim,
   status,
   zoneLabel,
@@ -35,9 +36,9 @@ export type ScreenProps = {
 
 /* ---- simulation lifecycle hook ----
  * Mặc định (VITE_DATA_SOURCE=sim): chạy bộ mô phỏng trong bộ nhớ.
- * Khi VITE_DATA_SOURCE=plc: đọc snapshot thật từ gateway qua WebSocket,
- * nạp vào UI bằng action 'load'; các lệnh điều khiển được gửi xuống gateway
- * (gateway mặc định từ chối ghi cho tới khi bật ALLOW_WRITES=true).
+ * Khi VITE_DATA_SOURCE=plc: đọc snapshot thật từ gateway qua WebSocket và
+ * nạp vào UI bằng action 'load'. Gateway hiện chỉ đọc; reducer khóa mọi action
+ * thay đổi trạng thái PLC ngoại trừ ACK cục bộ.
  */
 export function useSimulation() {
   /* Chế độ PLC khởi tạo bằng Sim RỖNG (không dữ liệu demo); mọi màn chờ gói đầu tiên.
@@ -78,7 +79,7 @@ export function ConnectionBadge({ sim }: { sim: Sim }) {
   const c = CONN[sim.connection];
   return (
     <Badge tone={c.tone}>
-      {sim.source === 'mock' ? 'Gateway (giả lập) · ' : 'PLC · '}
+      {sim.source === 'mock' ? 'Gateway giả lập · ' : 'Gateway PLC · '}
       {c.label}
     </Badge>
   );
@@ -263,7 +264,7 @@ export function BlockSelector({
         onChange={onPick}
         options={sim.blocks
           .filter((x) => zone === 'all' || x.zone === zone)
-          .map((x) => ({ value: x.id, label: 'Block ' + (x.name ?? x.id) }))}
+          .map((x) => ({ value: x.id, label: blockLabel(x) }))}
       />
       <Tag text={status(b, sim)} />
     </div>
@@ -293,13 +294,14 @@ export function MotorTrend({ metric = 'current' }: { metric?: string }) {
   return (
     <div className="trend">
       <div className="trend-live-top">
-        <span className="muted">{m.label} (Real-time Trend)</span>
+        <span className="muted">{m.label} (xu hướng mô phỏng)</span>
         <span className="trend-live-val">
           Giá trị hiện tại: <strong>{m.cur}</strong>
         </span>
-        <Badge tone="green">Sóng PLC Live</Badge>
+        <Badge tone="blue">Dữ liệu mô phỏng</Badge>
       </div>
-      <svg viewBox="0 0 760 200" role="img" aria-label="Đồ thị dòng điện motor nâng">
+      <svg viewBox="0 0 760 200" aria-label="Đồ thị dòng điện motor nâng">
+        <title>Đồ thị dòng điện motor nâng</title>
         {[0, 1, 2, 3, 4].map((i) => (
           <line
             key={i}

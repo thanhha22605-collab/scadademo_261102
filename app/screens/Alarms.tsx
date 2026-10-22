@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { CheckCheck, Download, ShieldCheck } from 'lucide-react';
-import { isActiveAlarm, type Alarm } from '@/lib/simulation';
+import { blockLabel, isActiveAlarm, type Alarm } from '@/lib/simulation';
 import { Box, Badge, Tag, Choice, csv, time, type ScreenProps } from './shared';
 
 const catName: Record<string, string> = {
@@ -16,17 +16,36 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
   const [alarmCat, setAlarmCat] = useState('all');
   const [alarmSev, setAlarmSev] = useState('all');
   const count = (c: string) =>
-    sim.alarms.filter((a) => isActiveAlarm(a) && !a.ack && a.cat === c).length;
+    sim.alarms.filter((a) => isActiveAlarm(a) && a.cat === c).length;
+  const severity = { 'Nghiêm trọng': 4, Cao: 3, 'Trung bình': 2, Thấp: 1 };
   const rows = sim.alarms
     .filter(
       (a) =>
         (alarmCat === 'all' || a.cat === alarmCat) &&
         (alarmSev === 'all' || a.sev === alarmSev),
     )
-    .sort((a, b) => Number(isActiveAlarm(b)) - Number(isActiveAlarm(a)));
-  const zoneOf = (blk: string) => blk[0];
+    .sort(
+      (a, b) =>
+        Number(isActiveAlarm(b)) - Number(isActiveAlarm(a)) ||
+        Number(a.ack) - Number(b.ack) ||
+        (severity[b.sev ?? 'Thấp'] ?? 0) - (severity[a.sev ?? 'Thấp'] ?? 0),
+    );
+  const blockOf = (id: string) => sim.blocks.find((block) => block.id === id);
+  const zoneOf = (alarm: Alarm) =>
+    alarm.zone ?? blockOf(alarm.block)?.zone ?? (/^[A-Z]-/.test(alarm.block) ? alarm.block[0] : '—');
+  const blockName = (id: string) => {
+    const block = blockOf(id);
+    return block ? blockLabel(block) : id;
+  };
   return (
     <>
+      {sim.source !== 'sim' && (
+        <div className="notice amber">
+          ACK hiện chỉ được lưu trong phiên trình duyệt và không ghi về PLC. Trạng
+          thái alarm vẫn “đang hoạt động” cho tới khi tín hiệu thực tế trở lại bình
+          thường.
+        </div>
+      )}
       <div className="metrics metrics-4">
         <div className="kpi kpi-red">
           <div className="kpi-top">
@@ -53,8 +72,10 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
           <div className="kpi-top">
             <span>Đã xác nhận (ACK)</span>
           </div>
-          <strong>{sim.alarms.filter((a) => a.ack).length}</strong>
-          <small>Nhân viên đang xử lý</small>
+          <strong>
+            {sim.alarms.filter((a) => isActiveAlarm(a) && a.ack).length}
+          </strong>
+          <small>Alarm còn hiệu lực đã được ACK</small>
         </div>
       </div>
       <Box
@@ -70,8 +91,8 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
                     a.at ?? '',
                     a.cat ? catName[a.cat] : '',
                     a.sev ?? '',
-                    zoneOf(a.block),
-                    a.block,
+                    zoneOf(a),
+                    blockName(a.block),
                     a.device ?? '',
                     a.code ?? '',
                     a.text,
@@ -83,7 +104,7 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
               )
             }
           >
-            <Download size={16} /> Xuất Excel
+            <Download size={16} /> Xuất CSV
           </button>
         }
       >
@@ -149,8 +170,8 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
                       {a.sev}
                     </Badge>
                   </td>
-                  <td>{zoneOf(a.block)}</td>
-                  <td>{a.block}</td>
+                  <td>{zoneOf(a)}</td>
+                  <td>{blockName(a.block)}</td>
                   <td>{a.device ?? '—'}</td>
                   <td className="mono">{a.code ?? '—'}</td>
                   <td>{a.text}</td>

@@ -5,13 +5,11 @@ import {
   Car,
   ChartNoAxesCombined,
   CreditCard,
-  Download,
   FileText,
   Grid2X2,
   Layers,
   LayoutDashboard,
   ListOrdered,
-  RefreshCw,
   Route,
   Server,
   Settings as SettingsIcon,
@@ -78,17 +76,3 @@ export const nav: { group: string; items: NavItem[] }[] = [
 ];
 export const allItems = nav.flatMap((g) => g.items);
 export const viewIds = allItems.map((i) => i.id);
-
-/* nút hành động ở góc phải tiêu đề, theo từng tab */
-export const screenAction: Record<
-  string,
-  { label: string; icon: React.ComponentType<{ size?: number }> } | undefined
-> = {
-  maintenance: { label: 'Xuất Work Order', icon: Download },
-  cards: { label: 'Cài đặt thẻ mới', icon: CreditCard },
-  diagnostics: { label: 'Làm mới dữ liệu', icon: RefreshCw },
-  backup: { label: 'Backup ngay', icon: Server },
-  cctv: { label: 'Xem tất cả (Grid)', icon: Camera },
-  routing: { label: 'AI-VDS Fallback', icon: Route },
-  users: { label: 'Audit Log', icon: Users },
-};

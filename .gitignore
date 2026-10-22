@@ -41,6 +41,9 @@ next-env.d.ts
 /outputs/
 /work/
 
+# local reference exports supplied for visual comparison
+/LUMI SCADA (standalone).html
+
 # gateway: cấu hình PLC thật do UI ghi ra (giữ bí mật IP)
 gateway/units.json
 

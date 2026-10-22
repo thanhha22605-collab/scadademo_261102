@@ -38,8 +38,8 @@ export const DEFAULTS = {
   protocol: 'tcp',
 };
 
-/* IP theo số block: 192.169.1.(100 + N) */
-export const plc = (n) => `192.169.1.${100 + Number(n)}`;
+/* IP gợi ý theo số block trong dải private: 192.168.1.(100 + N) */
+export const plc = (n) => `192.168.1.${100 + Number(n)}`;
 
 /* Đổi 1 cấu hình UI { n, name, type, door, zone, enabled } -> unit gateway đọc. */
 export function resolveUnit(c) {

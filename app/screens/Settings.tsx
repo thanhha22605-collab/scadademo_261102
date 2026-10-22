@@ -1,6 +1,5 @@
 'use client';
 import { useState } from 'react';
-import { RefreshCw, Save } from 'lucide-react';
 import { Panel, Rows, Row } from './shared';
 
 function Field({
@@ -34,17 +33,16 @@ function Toggle({ label, on = false }: { label: string; on?: boolean }) {
   );
 }
 export default function Settings() {
-  const [saved, setSaved] = useState('');
   return (
     <>
-      {saved && (
-        <div className="notice green" role="status">
-          {saved}
-        </div>
-      )}
+      <div className="notice amber">
+        Màn hình này là mẫu giao diện cấu hình và không ghi vào gateway, PLC,
+        database hay webhook. Cấu hình PLC thật được thực hiện tại tab “Cấu hình
+        PLC”.
+      </div>
       <div className="settings-grid">
         <Panel title="Kết nối truyền thông PLC/HMI" pad>
-          <Field label="IP SCADA Server (TASECO SCADA)" value="192.169.1.100" />
+          <Field label="IP SCADA Server (TASECO SCADA)" value="192.168.1.100" />
           <Field label="Port Modbus TCP" value="502" />
           <Field label="Chu kỳ polling (ms)" value="500" />
           <Field label="Timeout kết nối (ms)" value="3000" />
@@ -80,20 +78,6 @@ export default function Settings() {
             <Row k="Kích thước cơ sở dữ liệu" v="12.4 GB" />
           </Rows>
         </Panel>
-      </div>
-      <div className="settings-actions">
-        <button
-          className="secondary"
-          onClick={() => setSaved('Đã khôi phục cài đặt mặc định (mô phỏng).')}
-        >
-          <RefreshCw size={15} /> Khôi phục mặc định
-        </button>
-        <button
-          className="primary"
-          onClick={() => setSaved('Đã lưu cài đặt hệ thống (mô phỏng).')}
-        >
-          <Save size={15} /> Lưu cài đặt
-        </button>
       </div>
     </>
   );

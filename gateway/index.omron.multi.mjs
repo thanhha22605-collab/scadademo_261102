@@ -9,8 +9,12 @@ import { Poller, atomicSave, authorized, validateConfig } from './core.mjs';
 
 const file = fileURLToPath(new URL('./units.json', import.meta.url));
 let units = [];
+let configValid = true;
 try { units=validateConfig(JSON.parse(fs.readFileSync(file,'utf8'))); }
-catch(e) { console.error(e.code==='ENOENT'?'Chưa có cấu hình PLC.':'Cấu hình không hợp lệ; gateway khởi động ở trạng thái chưa cấu hình.'); }
+catch(e) {
+  configValid = e.code === 'ENOENT';
+  console.error(e.code==='ENOENT'?'Chưa có cấu hình PLC.':'Cấu hình không hợp lệ; gateway khởi động ở trạng thái chưa cấu hình.');
+}
 let snapshot={blocks:[],connected:false,at:Date.now(),source:config.mock?'mock':'plc'};
 const origins=new Set(config.allowedOrigins);
 function originAllowed(req) { return !req.headers.origin || origins.has(req.headers.origin); }
@@ -18,14 +22,27 @@ function json(res,code,data) { res.writeHead(code,{'Content-Type':'application/j
 const poller=new Poller({mock:config.mock,makeClient(u){
   const c=pkg.FinsClient(u.port,u.host,{protocol:u.protocol,timeout:2000});
   c.on('error',()=>{});c.on('timeout',()=>{});return c;
-},publish(data){snapshot=data;for(const c of wss.clients)if(c.readyState===1)c.send(JSON.stringify(snapshot));}});
+},publish(data){
+  snapshot=data;
+  const payload=JSON.stringify(snapshot);
+  for(const c of wss.clients)if(c.readyState===1){try{c.send(payload);}catch{}}
+}});
 const server=http.createServer((req,res)=>{
   if(!originAllowed(req))return json(res,403,{ok:false,error:'Origin không được phép.'});
   if(req.headers.origin){res.setHeader('Access-Control-Allow-Origin',req.headers.origin);res.setHeader('Vary','Origin');}
   res.setHeader('Access-Control-Allow-Methods','GET, PUT, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers','Content-Type, Authorization');
   if(req.method==='OPTIONS'){res.writeHead(204);return res.end();}
-  if(req.url==='/health'&&req.method==='GET')return json(res,200,{ok:true,source:snapshot.source,readOnly:true});
+  if(req.url==='/health'&&req.method==='GET')return json(res,200,{
+    ok:configValid,
+    configured:units.length>0,
+    connected:snapshot.connected,
+    online:snapshot.blocks.filter(block=>block.online).length,
+    total:snapshot.blocks.length,
+    at:snapshot.at,
+    source:snapshot.source,
+    readOnly:true,
+  });
   if(req.url!=='/config')return json(res,404,{ok:false,error:'Không tìm thấy API.'});
   if(!authorized(req.headers.authorization,config.adminToken))return json(res,401,{ok:false,error:'Cần token quản trị gateway (GATEWAY_ADMIN_TOKEN, tối thiểu 24 ký tự).'});
   if(req.method==='GET')return json(res,200,{units,presets:Object.entries(PRESETS).map(([key,v])=>({key,label:v.label,capacity:v.capacity})),readOnly:true});
@@ -37,7 +54,7 @@ const server=http.createServer((req,res)=>{
     try {
       const next=validateConfig(JSON.parse(body));
       atomicSave(file,next); // validate and persist before replacing the working runtime
-      units=next;poller.configure(next);
+      units=next;configValid=true;poller.configure(next);
       json(res,200,{ok:true,count:next.filter(u=>u.enabled).length});
     }catch(e){json(res,400,{ok:false,error:e.message});}
   });
@@ -56,7 +73,11 @@ wss.on('connection',ws=>{
 });
 poller.configure(units);
 let timer;
-async function loop(){await poller.poll();if(!poller.stopped)timer=setTimeout(loop,config.pollMs);}
+async function loop(){
+  try{await poller.poll();}
+  catch(error){console.error('Lỗi vòng polling:',error?.message||error);}
+  finally{if(!poller.stopped)timer=setTimeout(loop,config.pollMs);}
+}
 server.listen(config.wsPort,config.bindHost,()=>{
   console.log(`Gateway ${config.mock?'MOCK':'PLC'} CHỈ ĐỌC: http://${config.bindHost}:${config.wsPort}`);
   if(!config.adminToken)console.log('API cấu hình đang khóa: chưa đặt GATEWAY_ADMIN_TOKEN.');

@@ -27,6 +27,9 @@ import {
   status,
   validateDispatch,
   zoneLabel,
+  occupancyOf,
+  countOf,
+  blockLabel,
   type Block,
   type Mode,
 } from '@/lib/simulation';
@@ -49,6 +52,7 @@ export default function OperationControl({
   dispatch,
   selected,
   setSelected,
+  setPage,
 }: ScreenProps) {
   const [zone, setZone] = useState('all');
   const [slot, setSlot] = useState(0);
@@ -59,7 +63,9 @@ export default function OperationControl({
   if (!b) return <EmptyState sim={sim} />;
   /* Nguồn PLC là CHỈ ĐỌC: khóa toàn bộ nút điều khiển, chỉ giám sát. */
   const ro = isReadOnly(sim);
-  const job = sim.jobs.find((j) => j.block === b.id && active(j));
+  const job =
+    sim.jobs.find((j) => j.block === b.id && j.status === 'Đang chạy') ??
+    sim.jobs.find((j) => j.block === b.id && active(j));
   const pick = (id: string) => {
     setSelected(id);
     setSlot(0);
@@ -100,21 +106,26 @@ export default function OperationControl({
   // Gọi/Trả xe được phép khi block vận hành được (khớp reducer: không bắt buộc mode Manual);
   // chỉ khóa khi nguồn PLC chỉ-đọc hoặc block đang bị liên động chặn.
   const canManual = !ro && !blocked(b);
+  const selectedPresence = occupancyOf(b)[slot];
+  const linkOk =
+    sim.connection === 'online' && b.online && b.quality === 'good';
   function palletGrid(block: Block) {
+    const occupancy = occupancyOf(block);
     return (
       <div className="pallet-grid">
-        {block.slots.map((p, i) => {
+        {Array.from({ length: block.capacity }, (_, i) => {
+          const plateAtSlot = block.slots[i];
+          const presence = occupancy[i];
           const reserved = sim.jobs.some(
             (j) => j.block === block.id && j.slot === i && active(j),
           );
-          const fault = block.state === 'Lỗi' && i === 4;
           return (
             <button
               key={i}
               aria-pressed={selected === block.id && slot === i}
               className={
                 'pallet ' +
-                (fault ? 'fault ' : p ? 'occupied ' : '') +
+                (presence === true ? 'occupied ' : '') +
                 (reserved ? 'reserved ' : '') +
                 (selected === block.id && slot === i ? 'selected' : '')
               }
@@ -128,14 +139,23 @@ export default function OperationControl({
                 P{String(i + 1).padStart(2, '0')}
               </span>
               <Car size={27} />
-              <strong>{p ?? (fault ? 'LỖI' : 'TRỐNG')}</strong>
+              <strong>
+                {plateAtSlot ??
+                  (presence === true
+                    ? 'CÓ XE'
+                    : presence === null
+                      ? 'CHƯA RÕ'
+                      : 'TRỐNG')}
+              </strong>
               <small>
                 {reserved
                   ? 'Đang điều phối'
-                  : fault
-                    ? 'Lỗi vị trí'
-                    : p
+                  : presence === true
+                    ? plateAtSlot
                       ? 'Có xe'
+                      : 'Chưa có biển số'
+                    : presence === null
+                      ? 'Dữ liệu chưa xác nhận'
                       : 'Sẵn sàng'}
               </small>
             </button>
@@ -148,17 +168,21 @@ export default function OperationControl({
     <>
       <div className="occ-badges">
         <ConnectionBadge sim={sim} />
-        <Badge tone={b.state === 'Offline' ? 'red' : 'green'}>
-          PLC Link: {b.state === 'Offline' ? 'MẤT' : 'OK'}
-        </Badge>
-        <Badge tone="blue">Operator Session · supervisor01</Badge>
+        {sim.source === 'sim' ? (
+          <Badge tone="blue">Tín hiệu PLC được mô phỏng</Badge>
+        ) : (
+          <Badge tone={linkOk ? 'green' : b.quality === 'stale' ? 'amber' : 'red'}>
+            PLC Link: {linkOk ? 'OK' : b.quality === 'stale' ? 'STALE' : 'MẤT'}
+          </Badge>
+        )}
+        <Badge tone="blue">Người dùng mẫu · supervisor01</Badge>
         {b.forced && <Badge tone="red">Force Mode Active</Badge>}
       </div>
       {ro && (
-        <div className="notice amber" role="status">
+        <output className="notice amber">
           Nguồn dữ liệu là PLC (gateway chỉ đọc) — mọi lệnh điều khiển đã bị khóa,
           màn hình chỉ dùng để giám sát.
-        </div>
+        </output>
       )}
       <BlockSelector
         sim={sim}
@@ -185,7 +209,11 @@ export default function OperationControl({
         <div className="stack">
           <Box
             title={'Danh sách Block · ' + (zone === 'all' ? 'Tất cả Zone' : zoneLabel[zone])}
-            aside={<Badge tone="blue">Mô phỏng thời gian thực</Badge>}
+            aside={
+              <Badge tone={sim.source === 'sim' ? 'blue' : 'green'}>
+                {sim.source === 'sim' ? 'Mô phỏng thời gian thực' : 'Giám sát chỉ đọc'}
+              </Badge>
+            }
           >
             <div className="block-list">
               {zoneBlocks.map((x) => (
@@ -195,13 +223,13 @@ export default function OperationControl({
                   onClick={() => pick(x.id)}
                 >
                   <div className="block-list-top">
-                    <b>Block {x.id}</b>
+                    <b>{blockLabel(x)}</b>
                     <Tag text={status(x, sim)} />
                   </div>
                   <div className="block-list-meta">
-                    <span>Chế độ: {x.mode}</span>
+                    <span>Chế độ: {x.mode ?? 'Chưa ánh xạ'}</span>
                     <span>
-                      Đã đỗ: {x.slots.filter(Boolean).length}/{x.capacity} khay
+                      Đã đỗ: {countOf(x) ?? '—'}/{x.capacity} khay
                     </span>
                   </div>
                 </button>
@@ -210,12 +238,12 @@ export default function OperationControl({
           </Box>
           {tab === 'map' ? (
             <Box
-              title={'Sơ đồ khay đỗ cơ khí (Pallet Grid) · Block ' + b.id}
+              title={'Sơ đồ khay đỗ cơ khí (Pallet Grid) · ' + blockLabel(b)}
               aside={<span className="muted">Tổng số: {b.capacity} khay</span>}
             >
               <div className="floor-caption">
                 <span>
-                  {zoneLabel[b.zone]} / BLOCK {b.id}
+                  {zoneLabel[b.zone] ?? `Zone ${b.zone}`} / {blockLabel(b)}
                 </span>
                 <span>↑ HƯỚNG DI CHUYỂN</span>
               </div>
@@ -243,7 +271,7 @@ export default function OperationControl({
               </div>
             </Box>
           ) : (
-            <Box title={'Sequence View · Block ' + b.id}>
+            <Box title={'Sequence View · ' + blockLabel(b)}>
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -289,19 +317,23 @@ export default function OperationControl({
                 </TableBody>
               </Table>
               {!sim.jobs.some((j) => j.block === b.id) && (
-                <div className="empty-state">Block chưa có lệnh nào.</div>
+                <div className="empty-state">
+                  {ro
+                    ? 'Gateway chưa cung cấp dữ liệu hàng đợi/sequence của PLC.'
+                    : 'Block chưa có lệnh nào.'}
+                </div>
               )}
             </Box>
           )}
         </div>
         <div className="stack">
           <Box
-            title={'Control Panel · Block ' + b.id}
+            title={'Control Panel · ' + blockLabel(b)}
             aside={<Tag text={status(b, sim)} />}
           >
             <div className="control-line">
               <span>Chế độ hoạt động</span>
-              <strong>{b.mode.toUpperCase()}</strong>
+              <strong>{(b.mode ?? '—').toUpperCase()}</strong>
             </div>
             <div className="control-line">
               <span>Liên động an toàn</span>
@@ -309,7 +341,9 @@ export default function OperationControl({
             </div>
             <div className="control-line">
               <span>Trạng thái khóa</span>
-              <strong>{b.locked ? 'Đã khóa' : 'Mở'}</strong>
+              <strong>
+                {b.locked === null ? '— Chưa ánh xạ' : b.locked ? 'Đã khóa' : 'Mở'}
+              </strong>
             </div>
             <div className="ctrl-section">Chế độ hoạt động (Mode Selector)</div>
             <div className="mode-selector">
@@ -320,7 +354,7 @@ export default function OperationControl({
                   className={
                     'mode-btn ' +
                     (m.m === 'EStop' ? 'estop ' : '') +
-                    (b.mode === m.m ? 'active' : '')
+                    (!ro && b.mode === m.m ? 'active' : '')
                   }
                   onClick={() => setMode(m.m)}
                 >
@@ -357,10 +391,9 @@ export default function OperationControl({
               </button>
               <button
                 className={'cmd-btn ' + (b.forced ? 'active' : '')}
-                disabled={ro}
-                onClick={() => cmd('FORCE')}
+                onClick={() => setPage('safety')}
               >
-                <Zap size={14} /> Cưỡng bức
+                <Zap size={14} /> Mở trang Bypass
               </button>
               <button className="cmd-btn warn" disabled={ro} onClick={() => cmd('SIM_FAULT')}>
                 Giả lập lỗi
@@ -370,9 +403,9 @@ export default function OperationControl({
               </button>
             </div>
             {notice && (
-              <div className="notice" role="status">
+              <output className="notice">
                 {notice}
-              </div>
+              </output>
             )}
             {job && (
               <div className="job-progress">
@@ -406,7 +439,14 @@ export default function OperationControl({
             </div>
             <div className="control-line">
               <span>Biển số tại khay</span>
-              <strong>{b.slots[slot] ?? 'Không có xe'}</strong>
+              <strong>
+                {b.slots[slot] ??
+                  (selectedPresence === true
+                    ? 'Có xe · chưa có biển số'
+                    : selectedPresence === null
+                      ? 'Chưa xác nhận'
+                      : 'Không có xe')}
+              </strong>
             </div>
             <label className="field">
               <span>Biển số xe gọi vào</span>
@@ -420,14 +460,14 @@ export default function OperationControl({
             <div className="control-actions">
               <button
                 className="primary"
-                disabled={!canManual || !!b.slots[slot]}
+                disabled={!canManual || selectedPresence !== false}
                 onClick={() => send('in')}
               >
                 <ArrowDownLeft size={16} /> Gửi lệnh Gọi xe
               </button>
               <button
                 className="secondary"
-                disabled={!canManual || !b.slots[slot]}
+                disabled={!canManual || selectedPresence !== true}
                 onClick={() => send('out')}
               >
                 <ArrowUpRight size={16} /> Gửi lệnh Trả xe

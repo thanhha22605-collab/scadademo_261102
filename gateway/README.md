@@ -12,33 +12,37 @@ chạy trong Cloudflare Worker).
 > CP2E N-type có Modbus-TCP nhưng chỉ ở vai trò **Master** (đi đọc thiết bị khác),
 > KHÔNG chạy Modbus slave — nên phải đọc bằng **FINS**, không dùng Modbus.
 
-| Biến            | Mặc định        | Ý nghĩa                          |
-| --------------- | --------------- | -------------------------------- |
-| `FINS_PORT`     | `9600`          | Cổng FINS (fallback/tháp)        |
-| `FINS_PROTOCOL` | `tcp`           | `tcp` hoặc `udp`                 |
-| `POLL_MS`       | `500`           | Chu kỳ đọc (ms)                  |
-| `WS_PORT`       | `8081`          | Cổng WebSocket + HTTP cấu hình   |
-| `MOCK`          | `false`         | `true` = sinh số giả, không nối PLC |
-| `ALLOW_WRITES`  | `false`         | Cho phép GHI xuống PLC (nguy hiểm)  |
+| Biến | Mặc định | Ý nghĩa |
+| --- | --- | --- |
+| `POLL_MS` | `500` | Nghỉ giữa hai vòng đọc hoàn tất (ms) |
+| `WS_PORT` | `8081` | Cổng WebSocket + HTTP cấu hình |
+| `GATEWAY_BIND_HOST` | `127.0.0.1` | Interface lắng nghe; chỉ đổi khi đã cấu hình firewall/reverse proxy |
+| `GATEWAY_ADMIN_TOKEN` | trống | Token API `/config`, tối thiểu 24 ký tự; để trống thì API bị khóa |
+| `GATEWAY_ALLOWED_ORIGINS` | localhost | Danh sách Origin web được phép, phân cách bằng dấu phẩy |
+| `MOCK` | `false` | `true` = phát snapshot cố định 50% số ô, không nối PLC |
 
 ## Chạy gateway (nhiều tháp)
 
 Thực địa có nhiều tháp puzzle/comb, mỗi tháp là 1 PLC CP2E riêng. Không cần
 sửa code: khai báo từng tháp ngay trong SCADA (tab **Cấu hình PLC**) — chọn
-loại tháp (đã map sẵn số xe/E‑Stop/lỗi), nhập số Block N → IP tự suy
-`192.169.1.(100+N)`. Gateway lưu vào `units.json` và kết nối lại ngay.
+loại tháp (đã map sẵn số xe/E‑Stop/lỗi), nhập số Block N và xác nhận IP thực
+địa. Giao diện chỉ gợi ý dải private `192.168.1.(100+N)`. Gateway lưu vào
+`units.json` và kết nối lại ngay.
 
 ```bash
 npm install
 npm run start:omron-multi     # HTTP API cấu hình + WS snapshot trên cổng 8081
 ```
 
-API: `GET /config` (trả units + presets), `PUT /config` (mảng units, lưu + áp dụng).
+API: `GET /config` (trả units + presets), `PUT /config` (mảng units, lưu + áp
+dụng). Cả hai yêu cầu `Authorization: Bearer <GATEWAY_ADMIN_TOKEN>`. Endpoint
+`GET /health` không yêu cầu token và trả số PLC online/tổng số cùng thời điểm
+snapshot cuối.
 
 ### Test bằng dữ liệu giả (không cần PLC)
 
-Để thử API/giao diện khi chưa nối được PLC, chạy ở chế độ MOCK — gateway sinh
-số xe ngẫu nhiên (dao động mỗi chu kỳ, thỉnh thoảng báo lỗi) cho các tháp đang bật:
+Để thử API/giao diện khi chưa nối được PLC, chạy ở chế độ MOCK — gateway đánh
+dấu nửa đầu số ô là có xe cho các tháp đang bật:
 
 ```bash
 MOCK=true npm run start:omron-multi
@@ -83,7 +87,10 @@ thay vì mô phỏng. Để quay lại mô phỏng: bỏ `VITE_DATA_SOURCE` ho�
 
 ## 4. An toàn (bắt buộc đọc)
 
-- Bắt đầu **chỉ đọc**. `ALLOW_WRITES=false` cho tới khi bạn thực sự cần điều khiển.
-- Lệnh ghi (START/STOP/E-Stop…) phải được **whitelist**, xác thực và xác nhận —
-  gateway hiện **từ chối mọi lệnh ghi** khi `ALLOW_WRITES=false` (mặc định).
+- Gateway này **chỉ đọc** và luôn từ chối mọi message điều khiển. Không có biến
+  môi trường nào bật được ghi PLC trong phiên bản hiện tại.
+- Muốn điều khiển thật phải xây kênh ghi riêng có whitelist, xác thực, phản hồi
+  PLC, liên động và kiểm thử FAT/SAT; không nối nút mô phỏng thẳng vào PLC.
 - Tách mạng OT, **không phơi PLC ra Internet**. Dùng tài khoản quyền tối thiểu.
+- Trang web chạy HTTPS phải đi qua reverse proxy HTTPS/WSS; trình duyệt sẽ chặn
+  `http://`/`ws://` mixed content từ một trang HTTPS.

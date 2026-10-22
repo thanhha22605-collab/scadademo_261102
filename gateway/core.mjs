@@ -10,7 +10,13 @@ export function parseAddress(value) {
   return { word: area + Number(m[2]), bit: m[3] == null ? null : Number(m[3]) };
 }
 function text(value, label, max = 64) {
-  if (typeof value !== 'string' || !value.trim() || value.length > max || /[\u0000-\u001f]/.test(value)) throw new Error(label + ' không hợp lệ.');
+  let hasControl = false;
+  if (typeof value === 'string') {
+    for (let index = 0; index < value.length; index++) {
+      if (value.charCodeAt(index) < 32) { hasControl = true; break; }
+    }
+  }
+  if (typeof value !== 'string' || !value.trim() || value.length > max || hasControl) throw new Error(label + ' không hợp lệ.');
   return value.trim();
 }
 export function validateConfig(value) {
@@ -25,12 +31,12 @@ export function validateConfig(value) {
     if (!/^[a-zA-Z0-9_-]+$/.test(id)) throw new Error('ID chỉ gồm chữ, số, gạch ngang/gạch dưới.');
     const name = text(c.name || `Block ${n}`, 'Tên PLC');
     const zone = text(c.zone || 'A', 'Zone', 16);
-    const host = c.host || `192.169.1.${100 + n}`;
+    const host = c.host || `192.168.1.${100 + n}`;
     if (typeof host !== 'string' || !/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.split('.').some(x => Number(x) > 255)) throw new Error('IP PLC không hợp lệ.');
     const port = Number(c.port ?? 9600);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Port không hợp lệ.');
     const protocol = c.protocol ?? 'tcp';
-    if (!['tcp', 'udp'].includes(protocol)) throw new Error('Giao thức không hợp lệ.');
+    if (protocol !== 'tcp') throw new Error('Gateway hiện chỉ hỗ trợ FINS/TCP.');
     if (c.enabled != null && typeof c.enabled !== 'boolean') throw new Error('Trạng thái bật/tắt không hợp lệ.');
     const door = c.door || 'W1.08';
     if (parseAddress(door).bit == null) throw new Error('Cửa an toàn phải dùng địa chỉ bit.');
@@ -71,6 +77,15 @@ export function readWord(client, address, timeoutMs = 2200) {
     } catch (err) { clearTimeout(timer); reject(err); }
   });
 }
+const disposedClients = new WeakSet();
+function disposeClient(client, disconnect) {
+  if (!client || disposedClients.has(client)) return;
+  disposedClients.add(client);
+  if (disconnect) try { client.disconnect?.(); } catch {}
+  try { client.sequenceManager?.close?.(); } catch {}
+  try { client.removeAllListeners?.(); } catch {}
+}
+export function closeClient(client) { disposeClient(client, true); }
 export class Poller {
   constructor({ makeClient, publish = () => {}, mock = false, now = Date.now }) {
     Object.assign(this, { makeClient, publish, mock, now });
@@ -79,7 +94,7 @@ export class Poller {
   configure(list) {
     const units = validateConfig(list).filter(u => u.enabled).map(resolveUnit);
     this.generation++;
-    for (const c of this.clients.values()) { try { c.close?.(); } catch {} }
+    for (const c of this.clients.values()) closeClient(c);
     this.clients.clear(); this.lastGood.clear(); this.units = units;
     this.publish({ blocks: units.map(u => this.unavailable(u)), connected: false, at: this.now(), source: this.mock ? 'mock' : 'plc' });
   }
@@ -93,9 +108,12 @@ export class Poller {
       // FinsClient kết nối bất đồng bộ (TCP + handshake FINS mất vài ms).
       c = this.makeClient(u);
       this.clients.set(u.id, c);
-      const evict = () => { if (this.clients.get(u.id) === c) this.clients.delete(u.id); };
-      c.on?.('close', evict); // socket đứt → dọn client để vòng sau tạo lại và nối lại
-      c.on?.('error', () => {}); // nuốt lỗi; 'close' theo sau sẽ dọn
+      const evict = () => {
+        if (this.clients.get(u.id) === c) this.clients.delete(u.id);
+        disposeClient(c, false);
+      };
+      c.on?.('close', evict); // socket đứt → dọn cả client và timer của sequence manager
+      c.on?.('error', () => { evict(); closeClient(c); });
     }
     // Chưa kết nối xong thì báo tạm "không sẵn sàng" và CHỜ vòng poll sau —
     // KHÔNG xóa client (tránh vòng lặp tạo–đọc–xóa khiến không bao giờ đọc được).
@@ -113,7 +131,7 @@ export class Poller {
       if (generation === this.generation) this.lastGood.set(u.id, block);
       return block;
     } catch {
-      if (generation === this.generation && this.clients.get(u.id) === c) { try { c?.close?.(); } catch {} this.clients.delete(u.id); }
+      if (generation === this.generation && this.clients.get(u.id) === c) { closeClient(c); this.clients.delete(u.id); }
       return this.unavailable(u);
     }
   }
@@ -130,5 +148,5 @@ export class Poller {
     })().finally(()=>{this.inFlight=null});
     return this.inFlight;
   }
-  stop() { this.stopped=true; this.generation++; for (const c of this.clients.values()) {try{c.close?.()}catch{}} this.clients.clear(); }
+  stop() { this.stopped=true; this.generation++; for (const c of this.clients.values()) closeClient(c); this.clients.clear(); }
 }

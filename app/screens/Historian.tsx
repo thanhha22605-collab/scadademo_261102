@@ -13,6 +13,9 @@ import {
   Box,
   Choice,
   MotorTrend,
+  ConnectionBadge,
+  EmptyState,
+  isReadOnly,
   csv,
   type ScreenProps,
 } from './shared';
@@ -20,6 +23,8 @@ import {
 export default function Historian({ sim, selected, setSelected }: ScreenProps) {
   const [histMetric, setHistMetric] = useState('current');
   const b = sim.blocks.find((x) => x.id === selected) ?? sim.blocks[0];
+  if (!b) return <EmptyState sim={sim} />;
+  const readOnly = isReadOnly(sim);
   const download = () =>
     csv(
       [
@@ -46,22 +51,36 @@ export default function Historian({ sim, selected, setSelected }: ScreenProps) {
           </div>
         }
       >
-        <div className="hist-metrics">
-          {[
-            { k: 'current', label: 'Dòng điện Motor nâng (A)' },
-            { k: 'temp', label: 'Nhiệt độ động cơ (°C)' },
-            { k: 'vfd', label: 'Tần số biến tần VFD (Hz)' },
-          ].map((m) => (
-            <button
-              key={m.k}
-              className={'metric-pill ' + (histMetric === m.k ? 'active' : '')}
-              onClick={() => setHistMetric(m.k)}
-            >
-              {m.label}
-            </button>
-          ))}
-        </div>
-        <MotorTrend metric={histMetric} />
+        {readOnly ? (
+          <>
+            <div className="occ-badges">
+              <ConnectionBadge sim={sim} />
+            </div>
+            <div className="empty-state">
+              Gateway hiện chưa cung cấp dữ liệu historian dòng điện, nhiệt độ và
+              VFD. Không hiển thị đường xu hướng mẫu dưới nhãn PLC thật.
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="hist-metrics">
+              {[
+                { k: 'current', label: 'Dòng điện Motor nâng (A)' },
+                { k: 'temp', label: 'Nhiệt độ động cơ (°C)' },
+                { k: 'vfd', label: 'Tần số biến tần VFD (Hz)' },
+              ].map((m) => (
+                <button
+                  key={m.k}
+                  className={'metric-pill ' + (histMetric === m.k ? 'active' : '')}
+                  onClick={() => setHistMetric(m.k)}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            <MotorTrend metric={histMetric} />
+          </>
+        )}
       </Box>
       <Box
         title="Nhật ký vận hành"
@@ -76,8 +95,9 @@ export default function Historian({ sim, selected, setSelected }: ScreenProps) {
         }
       >
         <p className="hint">
-          500 sự kiện gần nhất trong phiên mô phỏng. Tải lại trang sẽ khởi tạo
-          lại dữ liệu.
+          {sim.source === 'sim'
+            ? '500 sự kiện gần nhất trong phiên mô phỏng. Tải lại trang sẽ khởi tạo lại dữ liệu.'
+            : 'Nhật ký cục bộ của phiên giám sát hiện tại; gateway chưa lưu historian tập trung.'}
         </p>
         <div className="table-scroll">
           <Table>
