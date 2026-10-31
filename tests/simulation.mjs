@@ -5,7 +5,7 @@ import {
   validateDispatch,
   blocked,
   isActiveAlarm,
-} from '../lib/simulation.ts';
+} from '../features/scada/model/simulation.ts';
 let s = createSim();
 const act = {
   type: 'dispatch',
@@ -43,10 +43,7 @@ s = reduceSim(s, {
   field: 'doorClosed',
   time: 'test',
 });
-assert.equal(
-  blocked(s.blocks[0]),
-  'Liên động đã tác động — cần START/RESUME',
-);
+assert.equal(blocked(s.blocks[0]), 'Liên động đã tác động — cần START/RESUME');
 for (let i = 0; i < 3; i++) s = reduceSim(s, { type: 'tick', time: 'test' });
 assert.equal(s.jobs[0].progress, 10, 'không tự chạy lại sau khi cửa đóng');
 s = reduceSim(s, {
@@ -95,7 +92,12 @@ assert.equal(s.jobs[0].progress, 0);
   queue = reduceSim(queue, { type: 'tick', time: 't' });
   assert.equal(queue.jobs.find((job) => job.id === 1).progress, 55);
   assert.equal(queue.jobs.find((job) => job.id === 999).progress, 0);
-  assert.equal(queue.jobs.filter((job) => job.block === 'A-02' && job.status === 'Đang chạy').length, 1);
+  assert.equal(
+    queue.jobs.filter(
+      (job) => job.block === 'A-02' && job.status === 'Đang chạy',
+    ).length,
+    1,
+  );
 }
 
 /* --- Hồi quy: ACK không giải lỗi và reconnect không xóa fault --- */
@@ -107,15 +109,30 @@ assert.equal(s.jobs[0].progress, 0);
   assert.equal(isActiveAlarm(alarm), true);
   const before = alarms.blocks.find((block) => block.id === 'A-04');
   assert.equal(before.fault, true);
-  alarms = reduceSim(alarms, { type: 'toggle', block: 'A-04', field: 'online', time: 't' });
-  alarms = reduceSim(alarms, { type: 'toggle', block: 'A-04', field: 'online', time: 't' });
+  alarms = reduceSim(alarms, {
+    type: 'toggle',
+    block: 'A-04',
+    field: 'online',
+    time: 't',
+  });
+  alarms = reduceSim(alarms, {
+    type: 'toggle',
+    block: 'A-04',
+    field: 'online',
+    time: 't',
+  });
   assert.equal(alarms.blocks.find((block) => block.id === 'A-04').fault, true);
 }
 
 /* --- Hồi quy: Bypass đúng cảm biến và tự hết hạn --- */
 {
   let bypass = createSim();
-  bypass = reduceSim(bypass, { type: 'toggle', block: 'A-01', field: 'photogateClear', time: 't' });
+  bypass = reduceSim(bypass, {
+    type: 'toggle',
+    block: 'A-01',
+    field: 'photogateClear',
+    time: 't',
+  });
   assert.match(blocked(bypass.blocks[0]), /Photogate/);
   bypass = reduceSim(bypass, {
     type: 'bypass',
@@ -139,8 +156,16 @@ assert.equal(s.jobs[0].progress, 0);
 {
   let alarms = createSim();
   for (let index = 0; index < 4; index++)
-    alarms = reduceSim(alarms, { type: 'command', block: 'A-01', cmd: 'SIM_FAULT', time: 't' });
-  assert.equal(alarms.alarms.filter((alarm) => alarm.id === 'FAULT-A-01').length, 1);
+    alarms = reduceSim(alarms, {
+      type: 'command',
+      block: 'A-01',
+      cmd: 'SIM_FAULT',
+      time: 't',
+    });
+  assert.equal(
+    alarms.alarms.filter((alarm) => alarm.id === 'FAULT-A-01').length,
+    1,
+  );
 }
 s = reduceSim(s, {
   type: 'toggle',
@@ -161,8 +186,18 @@ assert.equal(s.jobs[0].progress, 0);
   const T = 't';
   let f = createSim();
   f = reduceSim(f, { type: 'command', block: 'C-02', cmd: 'SIM_JAM', time: T });
-  f = reduceSim(f, { type: 'command', block: 'C-02', cmd: 'SIM_FAULT', time: T });
-  f = reduceSim(f, { type: 'command', block: 'C-02', cmd: 'SIM_FAULT', time: T });
+  f = reduceSim(f, {
+    type: 'command',
+    block: 'C-02',
+    cmd: 'SIM_FAULT',
+    time: T,
+  });
+  f = reduceSim(f, {
+    type: 'command',
+    block: 'C-02',
+    cmd: 'SIM_FAULT',
+    time: T,
+  });
   f = reduceSim(f, { type: 'command', block: 'C-02', cmd: 'SIM_JAM', time: T });
   const c = f.blocks.find((b) => b.id === 'C-02');
   assert.equal(c.fault, false, '#1 fault không được kẹt do JAM');
@@ -181,17 +216,38 @@ assert.equal(s.jobs[0].progress, 0);
   assert.equal(b.paused, false, '#5 UNLOCK không để lại pause');
   assert.equal(blocked(b), '', '#5 A-02 vận hành lại sau UNLOCK');
   l = reduceSim(l, { type: 'tick', time: T });
-  assert.equal(l.jobs.find((j) => j.id === 1).progress, 55, '#5 job tiếp tục sau UNLOCK');
+  assert.equal(
+    l.jobs.find((j) => j.id === 1).progress,
+    55,
+    '#5 job tiếp tục sau UNLOCK',
+  );
 }
 
 /* --- Hồi quy #2: đóng cửa lại → DOOR alarm chuyển sang resolved (không còn active) --- */
 {
   const T = 't';
   let a = createSim();
-  a = reduceSim(a, { type: 'toggle', block: 'B-01', field: 'doorClosed', time: T });
-  assert.ok(a.alarms.some((x) => x.id === 'DOOR-B-01' && isActiveAlarm(x)), '#2 mở cửa tạo DOOR active');
-  a = reduceSim(a, { type: 'toggle', block: 'B-01', field: 'doorClosed', time: T });
-  assert.equal(isActiveAlarm(a.alarms.find((x) => x.id === 'DOOR-B-01')), false, '#2 đóng cửa → resolved');
+  a = reduceSim(a, {
+    type: 'toggle',
+    block: 'B-01',
+    field: 'doorClosed',
+    time: T,
+  });
+  assert.ok(
+    a.alarms.some((x) => x.id === 'DOOR-B-01' && isActiveAlarm(x)),
+    '#2 mở cửa tạo DOOR active',
+  );
+  a = reduceSim(a, {
+    type: 'toggle',
+    block: 'B-01',
+    field: 'doorClosed',
+    time: T,
+  });
+  assert.equal(
+    isActiveAlarm(a.alarms.find((x) => x.id === 'DOOR-B-01')),
+    false,
+    '#2 đóng cửa → resolved',
+  );
 }
 
 /* --- Hồi quy #4: lệnh đã kết thúc bị giới hạn (không rò rỉ) --- */
@@ -200,10 +256,19 @@ assert.equal(s.jobs[0].progress, 0);
   let p = createSim();
   for (let i = 0; i < 260; i++) {
     const plate = `51H-${String(100 + i).slice(-3)}.${String(10 + (i % 80)).padStart(2, '0')}`;
-    p = reduceSim(p, { type: 'dispatch', block: 'A-01', slot: 16, plate, kind: 'in', time: T });
+    p = reduceSim(p, {
+      type: 'dispatch',
+      block: 'A-01',
+      slot: 16,
+      plate,
+      kind: 'in',
+      time: T,
+    });
     p = reduceSim(p, { type: 'cancel', id: p.jobs[0].id, time: T });
   }
-  const finished = p.jobs.filter((j) => j.status === 'Đã hủy' || j.status === 'Hoàn tất').length;
+  const finished = p.jobs.filter(
+    (j) => j.status === 'Đã hủy' || j.status === 'Hoàn tất',
+  ).length;
   assert.ok(finished <= 200, `#4 lệnh đã kết thúc bị giới hạn (=${finished})`);
 }
 

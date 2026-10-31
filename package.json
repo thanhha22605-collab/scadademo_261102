@@ -1,5 +1,5 @@
 {
-  "name": "sites-project",
+  "name": "totalparking-scada",
   "version": "0.1.0",
   "private": true,
   "engines": {
@@ -10,7 +10,11 @@
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
-    "format": "oxfmt"
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "test": "node --experimental-strip-types tests/simulation.mjs",
+    "test:gateway": "npm test --prefix gateway",
+    "check": "npm run lint && npx tsc --noEmit --incremental false && npm test && npm run test:gateway"
   },
   "dependencies": {
     "react": "19.2.6",
