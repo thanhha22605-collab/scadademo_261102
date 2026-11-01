@@ -14,7 +14,7 @@ function Field({
   return (
     <label className="set-field">
       <span>{label}</span>
-      <input defaultValue={value} type={type} />
+      <input defaultValue={value} type={type} readOnly />
     </label>
   );
 }
@@ -25,6 +25,7 @@ function Toggle({ label, on = false }: { label: string; on?: boolean }) {
       type="button"
       className="set-toggle"
       aria-pressed={v}
+      disabled
       onClick={() => setV(!v)}
     >
       <span>{label}</span>
@@ -36,20 +37,22 @@ export default function Settings() {
   return (
     <>
       <div className="notice amber">
-        Màn hình này là mẫu giao diện cấu hình và không ghi vào gateway, PLC,
-        database hay webhook. Cấu hình PLC thật được thực hiện tại tab “Cấu hình
-        PLC”.
+        Màn hình chỉ đọc phục vụ nghiệm thu. Mật khẩu và secret không được hiển
+        thị; thay đổi cấu hình PLC thật được thực hiện tại tab “Cấu hình PLC”.
       </div>
       <div className="settings-grid">
-        <Panel title="Kết nối truyền thông PLC/HMI" pad>
+        <Panel title="Kết nối PLC, CCU và chu kỳ quét" pad>
           <Field label="IP SCADA Server (TASECO SCADA)" value="192.168.1.100" />
-          <Field label="Port Modbus TCP" value="502" />
+          <Field label="Giao thức PLC" value="Omron FINS TCP/UDP" />
+          <Field label="Port FINS" value="9600" />
+          <Field label="CCU / PGS Controller" value="192.168.1.50" />
           <Field label="Chu kỳ polling (ms)" value="500" />
           <Field label="Timeout kết nối (ms)" value="3000" />
         </Panel>
         <Panel title="Cơ sở dữ liệu SCADA" pad>
           <Field label="DB Host Address" value="192.168.1.200" />
-          <Field label="DB Name" value="taseco_scada_tp" />
+          <Field label="DB Engine / Version" value="MySQL 8.x" />
+          <Field label="DB Name" value="totalparking_scada" />
           <Field label="Lưu trữ cảnh báo & sự kiện (ngày)" value="730" />
           <Field label="Tần suất tự động backup (giờ)" value="12" />
         </Panel>
@@ -71,7 +74,7 @@ export default function Settings() {
           />
           <Field
             label="Webhook Secret Authorization"
-            value="••••••••••••••••"
+            value="Đã cấu hình · không hiển thị"
             type="password"
           />
           <Toggle label="Chỉ gửi cảnh báo nghiêm trọng" on />

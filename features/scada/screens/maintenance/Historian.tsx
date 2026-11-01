@@ -11,6 +11,9 @@ import {
 } from '@/components/ui/table';
 import {
   Box,
+  Panel,
+  Bar,
+  Kpi,
   Choice,
   MotorTrend,
   ConnectionBadge,
@@ -22,6 +25,7 @@ import {
 
 export default function Historian({ sim, selected, setSelected }: ScreenProps) {
   const [histMetric, setHistMetric] = useState('current');
+  const [days, setDays] = useState('7');
   const b = sim.blocks.find((x) => x.id === selected) ?? sim.blocks[0];
   if (!b) return <EmptyState sim={sim} />;
   const readOnly = isReadOnly(sim);
@@ -33,8 +37,68 @@ export default function Historian({ sim, selected, setSelected }: ScreenProps) {
       ],
       'totalparking-nhat-ky.csv',
     );
+  const range = Number(days);
+  const daily = Array.from({ length: range }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (range - index - 1));
+    const lookups = 28 + ((index * 17 + range) % 53);
+    const routed = 18 + ((index * 11 + range) % 39);
+    return {
+      label: date.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+      }),
+      lookups,
+      routed,
+    };
+  });
   return (
     <div className="stack">
+      <Panel
+        title="Lịch sử tra cứu thẻ và xe vào bãi"
+        aside={
+          <Choice
+            label="Khoảng thời gian"
+            value={days}
+            onChange={setDays}
+            options={['7', '14', '30'].map((value) => ({
+              value,
+              label: `${value} ngày`,
+            }))}
+          />
+        }
+        pad
+      >
+        <div className="metrics metrics-2">
+          <Kpi
+            label="Tra cứu thẻ từ PLC"
+            value={String(daily.reduce((sum, item) => sum + item.lookups, 0))}
+            sub={`${days} ngày gần nhất`}
+            tone="blue"
+          />
+          <Kpi
+            label="Xe vào đã điều hướng"
+            value={String(daily.reduce((sum, item) => sum + item.routed, 0))}
+            sub={`${days} ngày gần nhất`}
+            tone="green"
+          />
+        </div>
+        <div className="daily-history">
+          {daily.map((item) => (
+            <div className="daily-history-row" key={item.label}>
+              <span>{item.label}</span>
+              <div>
+                <Bar value={Math.min(100, item.lookups)} />
+                <small>Tra cứu {item.lookups}</small>
+              </div>
+              <div>
+                <Bar value={Math.min(100, item.routed)} tone="#31cba4" />
+                <small>Xe vào {item.routed}</small>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Panel>
       <Box
         title="Biểu đồ xu hướng kỹ thuật (Historian & Trend)"
         aside={

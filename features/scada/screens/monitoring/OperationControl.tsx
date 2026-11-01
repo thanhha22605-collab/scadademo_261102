@@ -461,6 +461,28 @@ export default function OperationControl({
               >
                 Giả lập kẹt
               </button>
+              <button
+                className="cmd-btn stop incident-button"
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      'Ghi nhận cảnh báo SU-CO-KHAN? Thao tác này không gửi lệnh dừng PLC.',
+                    )
+                  )
+                    return;
+                  dispatch({
+                    type: 'report-incident',
+                    block: b.id,
+                    time: time(),
+                    by: 'supervisor01',
+                  });
+                  setNotice(
+                    'Đã ghi nhận SU-CO-KHAN. Không có lệnh dừng máy nào được gửi.',
+                  );
+                }}
+              >
+                BÁO SỰ CỐ
+              </button>
             </div>
             {notice && <output className="notice">{notice}</output>}
             {job && (

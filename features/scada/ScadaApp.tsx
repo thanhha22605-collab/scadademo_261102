@@ -37,13 +37,24 @@ import {
 
 const liveDataViews = new Set([
   'overview',
+  'floorplan',
+  'zones',
   'control',
+  'routing',
   'queue',
   'tracking',
+  'access',
+  'driver',
   'alarms',
   'safety',
+  'assets',
+  'diagnostics',
   'historian',
+  'cards',
+  'cctv',
   'plcconfig',
+  'users',
+  'backup',
 ]);
 
 export default function ScadaApp() {
@@ -58,9 +69,22 @@ export default function ScadaApp() {
   const unacknowledged = sim.alarms.filter(
     (a) => isActiveAlarm(a) && !a.ack,
   ).length;
-  const hasFault = sim.alarms.some(
-    (a) => isActiveAlarm(a) && a.cat === 'system',
+  const criticalUnacknowledged = sim.alarms.some(
+    (a) =>
+      isActiveAlarm(a) &&
+      !a.ack &&
+      (a.sev === 'Nghiêm trọng' || a.cat === 'system'),
   );
+  const disconnected =
+    sim.source !== 'sim' &&
+    (sim.connection === 'offline' || sim.connection === 'stale');
+  const alarmSummary = disconnected
+    ? { label: 'Mất kết nối', tone: 'offline', count: '—' }
+    : criticalUnacknowledged
+      ? { label: 'Sự cố', tone: 'critical', count: String(activeAlarms) }
+      : unacknowledged > 0 || activeAlarms > 0
+        ? { label: 'Cảnh báo', tone: 'warning', count: String(activeAlarms) }
+        : { label: 'Bình thường', tone: 'normal', count: '0' };
   useEffect(() => {
     const tick = () => {
       const d = new Date();
@@ -202,11 +226,16 @@ export default function ScadaApp() {
             </div>
           </div>
           <div className="header-right">
-            {hasFault && <Badge tone="red">Lỗi</Badge>}
-            <span className="alarm-count">
+            <button
+              type="button"
+              className={'alarm-count alarm-' + alarmSummary.tone}
+              onClick={() => setPage('alarms')}
+              aria-label={`Trạng thái cảnh báo: ${alarmSummary.label}`}
+            >
               <Bell size={13} />
-              {activeAlarms} Alarm · {unacknowledged} chưa ACK
-            </span>
+              {alarmSummary.label} · {alarmSummary.count} Alarm ·{' '}
+              {disconnected ? '—' : unacknowledged} chưa ACK
+            </button>
             <span className="clock">
               <Clock3 size={14} />
               {now}

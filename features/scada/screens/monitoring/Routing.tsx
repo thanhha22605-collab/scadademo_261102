@@ -1,4 +1,5 @@
 'use client';
+import { useState } from 'react';
 import {
   Panel,
   Badge,
@@ -6,47 +7,16 @@ import {
   Bar,
   Rows,
   Row,
+  type ScreenProps,
 } from '@/features/scada/components/shared';
+import { countOf, zoneLabel } from '@/features/scada/model/simulation';
+import {
+  DRIVER_EVENT,
+  DRIVER_STORAGE_KEY,
+  type DriverInstruction,
+} from '@/features/scada/screens/monitoring/DriverDisplay';
 
-const routeZones = [
-  {
-    z: 'Zone A – Hầm B1',
-    free: 11,
-    occ: 23,
-    cap: 34,
-    pct: 68,
-    suv: 9,
-    load: 'Trung bình',
-  },
-  {
-    z: 'Zone B – Hầm B2',
-    free: 18,
-    occ: 20,
-    cap: 38,
-    pct: 53,
-    suv: 8,
-    load: 'Bình thường',
-  },
-  {
-    z: 'Zone C – Hầm B3',
-    free: 30,
-    occ: 10,
-    cap: 40,
-    pct: 25,
-    suv: 4,
-    load: 'Rảnh rỗi',
-  },
-  {
-    z: 'Zone D – Tầng 1',
-    free: 34,
-    occ: 10,
-    cap: 44,
-    pct: 23,
-    suv: 4,
-    load: 'Rảnh rỗi',
-  },
-];
-const classified = [
+const fallbackClassified = [
   {
     type: 'SUV',
     tone: 'amber',
@@ -78,7 +48,7 @@ const classified = [
     state: 'Từ chối / Rejected',
   },
 ];
-const peripherals = [
+const fallbackPeripherals = [
   { k: 'Gửi AI-VDS', v: 'Mất kết nối', t: 'red', at: '08:15:44' },
   { k: 'LED Ngoài trời', v: 'Hoạt động', t: 'green', at: '08:42:25' },
   { k: 'LED Trong hầm', v: 'Hoạt động', t: 'green', at: '08:42:27' },
@@ -86,18 +56,239 @@ const peripherals = [
   { k: 'Máy phát thẻ', v: 'Giữ thẻ (Hold)', t: 'amber', at: '08:42:30' },
   { k: 'Bộ điều khiển ZCU', v: 'Hoạt động', t: 'green', at: '08:42:15' },
 ];
-export default function Routing() {
+const routeOptions = [
+  {
+    key: '2200',
+    label: 'Dưới 2200KG',
+    vehicleClass: 'Xe nhẹ · dưới 2200 kg',
+    zone: 'Zone C',
+    block: 'Block C-02',
+    route: 'Cổng vào → Làn trung tâm → Đi thẳng → Zone C → Block C-02',
+  },
+  {
+    key: '2600',
+    label: '2200–2600KG',
+    vehicleClass: 'Xe trung · 2200–2600 kg',
+    zone: 'Zone B',
+    block: 'Block B-01',
+    route: 'Cổng vào → Làn trung tâm → Rẽ trái → Zone B → Block B-01',
+  },
+  {
+    key: 'normal',
+    label: 'Đỗ thường',
+    vehicleClass: 'Đỗ thường',
+    zone: 'Zone A',
+    block: 'Block A-02',
+    route: 'Cổng vào → Làn ngoài → Rẽ phải → Zone A → Block A-02',
+  },
+] as const;
+
+export default function Routing({ sim }: ScreenProps) {
+  const [route, setRoute] = useState<(typeof routeOptions)[number]>(
+    routeOptions[2],
+  );
+  const [plate, setPlate] = useState('30H-88877');
+  const camera = sim.integrations?.camera;
+  const pgs = sim.integrations?.pgs;
+  const led = sim.integrations?.led;
+  const live = sim.source !== 'sim';
+  const routeZones = [...new Set(sim.blocks.map((block) => block.zone))]
+    .sort()
+    .map((zone) => {
+      const blocks = sim.blocks.filter((block) => block.zone === zone);
+      const cap = blocks.reduce((sum, block) => sum + block.capacity, 0);
+      const occ = blocks.reduce((sum, block) => sum + (countOf(block) ?? 0), 0);
+      const free = Math.max(0, cap - occ);
+      const pct = cap ? Math.round((occ / cap) * 100) : 0;
+      return {
+        id: zone,
+        z: zoneLabel[zone] ?? `Zone ${zone}`,
+        free,
+        occ,
+        cap,
+        pct,
+        suv: blocks.reduce(
+          (sum, block) =>
+            sum + block.kinds.filter((kind) => kind === 'SUV').length,
+          0,
+        ),
+        load: pct >= 80 ? 'Cao' : pct >= 50 ? 'Trung bình' : 'Rảnh rỗi',
+      };
+    });
+  const highestZone = routeZones.reduce(
+    (best, item) => (!best || item.pct > best.pct ? item : best),
+    routeZones[0],
+  );
+  const lowestZone = routeZones.reduce(
+    (best, item) => (!best || item.pct < best.pct ? item : best),
+    routeZones[0],
+  );
+  const balanceGap =
+    highestZone && lowestZone ? highestZone.pct - lowestZone.pct : 0;
+  const totalOccupied = routeZones.reduce((sum, zone) => sum + zone.occ, 0);
+  const totalFree = routeZones.reduce((sum, zone) => sum + zone.free, 0);
+  const totalSuv = routeZones.reduce((sum, zone) => sum + zone.suv, 0);
+  const totalSedan = sim.blocks.reduce(
+    (sum, block) => sum + block.kinds.filter((kind) => kind === 'Sedan').length,
+    0,
+  );
+  const classified = camera
+    ? [
+        {
+          type: camera.category || camera.weightClass || 'CHƯA XÁC ĐỊNH',
+          tone:
+            camera.outcome === 'rejected' || camera.outcome === 'no-capacity'
+              ? 'red'
+              : camera.outcome === 'manual-review'
+                ? 'amber'
+                : 'green',
+          plate:
+            camera.plate ||
+            [camera.make, camera.model].filter(Boolean).join(' ') ||
+            camera.eventId,
+          dim: [
+            camera.lengthMm ? `Dài ${camera.lengthMm}mm` : null,
+            camera.widthMm ? `Rộng ${camera.widthMm}mm` : null,
+            camera.heightMm ? `Cao ${camera.heightMm}mm` : null,
+            camera.weightKg ? `Không tải ${camera.weightKg}kg` : null,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+          block: camera.block
+            ? `Block ${camera.block}`
+            : camera.reason || 'Chờ operator xử lý',
+          card: camera.weightClass || 'Chưa phân hạng tải',
+          time: new Date(camera.receivedAt).toLocaleTimeString('vi-VN'),
+          state:
+            camera.outcome === 'routed'
+              ? 'Đã phân tuyến'
+              : camera.outcome === 'manual-review'
+                ? 'Cần kiểm tra tay'
+                : camera.outcome === 'no-capacity'
+                  ? 'Hết chỗ phù hợp'
+                  : 'Từ chối',
+        },
+      ]
+    : live
+      ? []
+      : fallbackClassified;
+  const peripherals = live
+    ? [
+        {
+          k: 'Gateway PLC',
+          v: sim.connection === 'online' ? 'Hoạt động' : 'Mất kết nối',
+          t: sim.connection === 'online' ? 'green' : 'red',
+          at: sim.updatedAt
+            ? new Date(sim.updatedAt).toLocaleTimeString('vi-VN')
+            : '—',
+        },
+        {
+          k: 'Camera AI',
+          v: camera ? 'Đã nhận sự kiện' : 'Chưa có dữ liệu',
+          t: camera ? 'green' : 'amber',
+          at: camera
+            ? new Date(camera.receivedAt).toLocaleTimeString('vi-VN')
+            : '—',
+        },
+        {
+          k: 'Bảng LED TCP',
+          v: led?.configured
+            ? `${led.online}/${led.panels} online`
+            : 'Chưa cấu hình',
+          t: !led?.configured
+            ? 'amber'
+            : led.online === led.panels
+              ? 'green'
+              : 'red',
+          at: led?.items?.find((item) => item.lastOkAt)?.lastOkAt
+            ? new Date(
+                led.items.find((item) => item.lastOkAt)!.lastOkAt!,
+              ).toLocaleTimeString('vi-VN')
+            : '—',
+        },
+        {
+          k: 'PGS / CCU',
+          v: pgs?.configured
+            ? `${pgs.connected}/${pgs.zcuTotal} ZCU`
+            : 'Chưa cấu hình',
+          t: !pgs?.configured
+            ? 'amber'
+            : pgs.listening && pgs.connected > 0
+              ? 'green'
+              : 'red',
+          at: pgs?.lastAt
+            ? new Date(pgs.lastAt).toLocaleTimeString('vi-VN')
+            : '—',
+        },
+      ]
+    : fallbackPeripherals;
+  const chooseRoute = (option: (typeof routeOptions)[number]) => {
+    setRoute(option);
+    const instruction: DriverInstruction = {
+      plate: plate.trim().toUpperCase() || 'CHƯA NHẬN DIỆN',
+      vehicleClass: option.vehicleClass,
+      block: option.block,
+      zone: option.zone,
+      route: option.route,
+      updatedAt: new Date().toLocaleString('vi-VN'),
+    };
+    localStorage.setItem(DRIVER_STORAGE_KEY, JSON.stringify(instruction));
+    window.dispatchEvent(new Event(DRIVER_EVENT));
+  };
   return (
     <>
-      <div className="notice amber routing-fallback">
-        <b>AI-VDS đang hoạt động ở chế độ Fallback (Dự phòng)</b>
+      <div
+        className={`notice ${camera || !live ? 'amber' : 'red'} routing-fallback`}
+      >
+        <b>
+          {live
+            ? camera
+              ? `Camera AI đã nhận event ${camera.eventId}`
+              : 'Chưa nhận sự kiện Camera AI'
+            : 'AI-VDS đang hoạt động ở chế độ Fallback (Dự phòng)'}
+        </b>
         <span>
-          Mất tín hiệu heartbeat từ cổng đo quét chính. Dữ liệu kích thước đang
-          được quét thủ công hoặc dùng cảm biến dự phòng ZCU tại cổng vào.
+          {live
+            ? camera
+              ? 'Số đo được phân loại theo mm/kg; biển số chỉ hiển thị khi nguồn camera có cung cấp.'
+              : 'Gateway đang chờ POST /api/camera/ingest với event_id và số đo xe.'
+            : 'Mất tín hiệu heartbeat từ cổng đo quét chính. Dữ liệu kích thước đang được quét thủ công hoặc dùng cảm biến dự phòng ZCU tại cổng vào.'}
         </span>
       </div>
       <div className="two-col">
         <div className="stack">
+          <Panel title="Mô phỏng tuyến điều hướng nghiệm thu" pad>
+            <label className="field">
+              <span>Biển số mô phỏng</span>
+              <input
+                value={plate}
+                onChange={(event) => setPlate(event.target.value.toUpperCase())}
+                placeholder="30H-88877"
+              />
+            </label>
+            <div className="route-sim-buttons">
+              {routeOptions.map((option) => (
+                <button
+                  className={option.key === route.key ? 'primary' : 'secondary'}
+                  key={option.key}
+                  onClick={() => chooseRoute(option)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <div className="route-animation" key={route.key}>
+              <span className="route-car">🚗</span>
+              <div>
+                <b>{route.block}</b>
+                <small>{route.route}</small>
+              </div>
+            </div>
+            <p className="hint">
+              Chỉ mô phỏng hình ảnh và cập nhật màn hình tài xế; không ghi dữ
+              liệu và không gửi lệnh PLC.
+            </p>
+          </Panel>
           <Panel title="Mật độ & Cân bằng tải Zone" pad>
             {routeZones.map((r) => (
               <div className="route-zone" key={r.z}>
@@ -112,7 +303,11 @@ export default function Routing() {
                 </div>
                 <Bar value={r.pct} />
                 <div className="route-zone-foot">
-                  <span>Khay chứa SUV: {r.suv} khay</span>
+                  <span>
+                    {live
+                      ? `${r.free} vị trí khả dụng`
+                      : `Khay chứa SUV: ${r.suv} khay`}
+                  </span>
                   <span>Mức tải: {r.load}</span>
                 </div>
               </div>
@@ -121,27 +316,56 @@ export default function Routing() {
           <Panel title="Điều phối tín hiệu & Cân bằng tải" pad>
             <div className="control-line">
               <span>Logic cân bằng tải tự động</span>
-              <Badge tone="green">ACTIVE</Badge>
+              <Badge tone={live ? 'green' : 'blue'}>
+                {live ? 'GATEWAY' : 'MÔ PHỎNG'}
+              </Badge>
             </div>
             <Rows>
               <Row k="Ngưỡng lệch mật độ kích hoạt" v="> 20%" />
               <Row
                 k="Lệch tải hiện tại"
-                v="Zone A (68%) vs Zone C (25%) = 43%"
+                v={
+                  highestZone && lowestZone
+                    ? `Zone ${highestZone.id} (${highestZone.pct}%) vs Zone ${lowestZone.id} (${lowestZone.pct}%) = ${balanceGap}%`
+                    : 'Chưa có dữ liệu Zone'
+                }
               />
-              <Row k="Đang hướng xe sang" v="Zone C (mật độ thấp nhất)" />
+              <Row
+                k="Đang hướng xe sang"
+                v={
+                  lowestZone
+                    ? `Zone ${lowestZone.id} (${lowestZone.free} vị trí trống)`
+                    : 'Chờ dữ liệu'
+                }
+              />
               <Row k="Màn hình 55'' trạm phân loại" v="Hiển thị chỉ đường" />
-              <Row k="Loại thẻ đề xuất" v="Thẻ Sedan (Xanh lá)" />
+              <Row
+                k="Hạng tải đề xuất"
+                v={camera?.weightClass || 'Chờ dữ liệu Camera AI'}
+              />
             </Rows>
             <div className="api-block">
               <div className="api-line">
-                <span className="mono">POST /api/v1/access-control/allow</span>
-                <Badge tone="green">200 OK</Badge>
+                <span className="mono">POST /api/camera/ingest</span>
+                <Badge tone={camera ? 'green' : 'blue'}>
+                  {camera ? 'ĐÃ NHẬN' : 'HỢP ĐỒNG API'}
+                </Badge>
               </div>
               <pre>
-                {`{ "plate": "30H-88877", "type": "Sedan",
-  "card_id": "RFID-09884",
-  "recommended_zone": "Zone B", "status": "Allowed" }`}
+                {camera
+                  ? JSON.stringify(
+                      {
+                        event_id: camera.eventId,
+                        outcome: camera.outcome,
+                        weight_class: camera.weightClass,
+                        zone: camera.zone,
+                        block: camera.block,
+                      },
+                      null,
+                      2,
+                    )
+                  : `{ "event_id": "camera-event-id", "length_mm": 4800,
+  "width_mm": 1800, "height_mm": 1600, "weight_kg": 1900 }`}
               </pre>
             </div>
           </Panel>
@@ -149,12 +373,18 @@ export default function Routing() {
             <div className="led-board">
               <div className="led-line">
                 <span>LED Matrix ngoài trời</span>
-                <b className="led-text">SUV 38 · SEDAN 55 · THƯỜNG 24</b>
+                <b className="led-text">
+                  {live
+                    ? `ĐANG ĐỖ ${totalOccupied} · TRỐNG ${totalFree}`
+                    : `SUV ${totalSuv} · SEDAN ${totalSedan} · TRỐNG ${totalFree}`}
+                </b>
               </div>
               <div className="led-line">
                 <span>LED chỉ dẫn hầm</span>
                 <b className="led-text">
-                  ZONE B ← 18 &nbsp; | &nbsp; ZONE C ↑ 30
+                  {routeZones
+                    .map((zone) => `ZONE ${zone.id} ${zone.free}`)
+                    .join('  |  ') || 'CHỜ DỮ LIỆU ZONE'}
                 </b>
               </div>
             </div>
@@ -163,17 +393,28 @@ export default function Routing() {
                 k="Màn hình 55'' trạm phân loại"
                 v="Hoạt động · Hiển thị chỉ đường"
               />
-              <Row k="Loại thẻ đề xuất" v="Thẻ Sedan (Xanh lá)" />
-              <Row k="Vị trí khuyên dùng" v="Zone B · Block B-01" />
+              <Row
+                k="Hạng tải đề xuất"
+                v={camera?.weightClass || 'Chưa có dữ liệu Camera AI'}
+              />
+              <Row
+                k="Vị trí khuyên dùng"
+                v={
+                  camera?.block
+                    ? `Zone ${camera.zone} · Block ${camera.block}`
+                    : 'Chờ phân tuyến'
+                }
+              />
             </Rows>
           </Panel>
         </div>
         <div className="stack">
           <Panel title="Phân loại xe đang tiếp nhận (AI-VDS Camera)" pad>
-            <div className="notice amber">
-              <b>Cảnh báo xe quá khổ:</b> Xe 43A-56789 vượt giới hạn bãi đỗ
-              (&gt; 1.80m). Đã khóa máy phát thẻ tự động.
-            </div>
+            {camera?.reason && (
+              <div className="notice amber">
+                <b>Kết quả phân loại:</b> {camera.reason}
+              </div>
+            )}
             {classified.map((c) => (
               <div className={'classify-card ' + c.tone} key={c.plate}>
                 <div className="classify-top">
@@ -190,6 +431,11 @@ export default function Routing() {
                 </div>
               </div>
             ))}
+            {!classified.length && (
+              <div className="empty-state">
+                Chưa có sự kiện xe từ Camera AI.
+              </div>
+            )}
           </Panel>
           <Panel title="Trạng thái truyền thông & Thiết bị ngoại vi" pad>
             <div className="periph-grid">

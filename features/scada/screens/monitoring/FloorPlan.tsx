@@ -1,5 +1,11 @@
 'use client';
-import { Badge } from '@/features/scada/components/shared';
+import { useMemo, useState } from 'react';
+import {
+  Badge,
+  Panel,
+  type ScreenProps,
+} from '@/features/scada/components/shared';
+import { countOf, percent } from '@/features/scada/model/simulation';
 
 type FZone = {
   z: number;
@@ -87,7 +93,15 @@ const facility: FZone[] = [
     sedan: '06/20',
   },
 ];
-function FloorZoneSvg({ zn }: { zn: FZone }) {
+function FloorZoneSvg({
+  zn,
+  active,
+  onPick,
+}: {
+  zn: FZone;
+  active: boolean;
+  onPick: () => void;
+}) {
   const pct = Math.round((zn.occ / zn.cap) * 100);
   const rows = Math.ceil(zn.cap / zn.cols);
   const cs = Math.max(
@@ -97,58 +111,109 @@ function FloorZoneSvg({ zn }: { zn: FZone }) {
   const gx = zn.x + (zn.w - (cs + 3) * zn.cols) / 2;
   const gy = zn.y + 40;
   return (
-    <g>
-      <rect
-        x={zn.x}
-        y={zn.y}
-        width={zn.w}
-        height={zn.h}
-        rx="7"
-        fill="#0e1c2e"
-        stroke="#2f5580"
-        strokeDasharray="5 4"
-      />
-      <text
-        x={zn.x + 14}
-        y={zn.y + 26}
-        fill="#cddcf0"
-        fontSize="17"
-        fontWeight="700"
-      >
-        ZONE {zn.z}
-      </text>
-      <text
-        x={zn.x + zn.w - 14}
-        y={zn.y + 26}
-        fill="#7fb0e6"
-        fontSize="14"
-        textAnchor="end"
-      >
-        {pct}%
-      </text>
-      {Array.from({ length: zn.cap }, (_, k) => {
-        const col = k % zn.cols;
-        const row = Math.floor(k / zn.cols);
-        return (
-          <rect
-            key={k}
-            x={gx + col * (cs + 3)}
-            y={gy + row * (cs + 3)}
-            width={cs}
-            height={cs}
-            rx="1.5"
-            fill={k < zn.occ ? '#1c6b56' : '#16283c'}
-            stroke={k < zn.occ ? '#2f9d7d' : '#24405b'}
-          />
-        );
-      })}
-      <text x={zn.x + 14} y={zn.y + zn.h - 14} fill="#8ca1bd" fontSize="12">
-        SUV {zn.suv} · Sedan {zn.sedan} · Mật độ {zn.occ}/{zn.cap}
-      </text>
-    </g>
+    <a
+      href={`#zone-${zn.z}`}
+      aria-label={`Mở chi tiết Zone ${zn.z}`}
+      onClick={(event) => {
+        event.preventDefault();
+        onPick();
+      }}
+    >
+      <g style={{ cursor: 'pointer', outline: 'none' }}>
+        <rect
+          x={zn.x}
+          y={zn.y}
+          width={zn.w}
+          height={zn.h}
+          rx="7"
+          fill="#0e1c2e"
+          stroke={active ? '#f59e0b' : '#2f5580'}
+          strokeWidth={active ? 3 : 1}
+          strokeDasharray="5 4"
+        />
+        <text
+          x={zn.x + 14}
+          y={zn.y + 26}
+          fill="#cddcf0"
+          fontSize="17"
+          fontWeight="700"
+        >
+          ZONE {zn.z}
+        </text>
+        <text
+          x={zn.x + zn.w - 14}
+          y={zn.y + 26}
+          fill="#7fb0e6"
+          fontSize="14"
+          textAnchor="end"
+        >
+          {pct}%
+        </text>
+        {Array.from({ length: zn.cap }, (_, k) => {
+          const col = k % zn.cols;
+          const row = Math.floor(k / zn.cols);
+          return (
+            <rect
+              key={k}
+              x={gx + col * (cs + 3)}
+              y={gy + row * (cs + 3)}
+              width={cs}
+              height={cs}
+              rx="1.5"
+              fill={k < zn.occ ? '#1c6b56' : '#16283c'}
+              stroke={k < zn.occ ? '#2f9d7d' : '#24405b'}
+            />
+          );
+        })}
+        <text x={zn.x + 14} y={zn.y + zn.h - 14} fill="#8ca1bd" fontSize="12">
+          SUV {zn.suv} · Sedan {zn.sedan} · Mật độ {zn.occ}/{zn.cap}
+        </text>
+      </g>
+    </a>
   );
 }
-export default function FloorPlan() {
+export default function FloorPlan({ sim, setSelected, setPage }: ScreenProps) {
+  const [selectedZone, setSelectedZone] = useState(1);
+  const liveFacility = useMemo(
+    () =>
+      facility.map((zone) => {
+        const key = ['A', 'B', 'C'][zone.z - 1];
+        if (!key) return zone;
+        const blocks = sim.blocks.filter((block) => block.zone === key);
+        if (!blocks.length) return zone;
+        const cap = blocks.reduce((sum, block) => sum + block.capacity, 0);
+        const occ = blocks.reduce(
+          (sum, block) => sum + (countOf(block) ?? 0),
+          0,
+        );
+        const suv = blocks.reduce(
+          (sum, block) =>
+            sum + block.kinds.filter((kind) => kind === 'SUV').length,
+          0,
+        );
+        const sedan = blocks.reduce(
+          (sum, block) =>
+            sum + block.kinds.filter((kind) => kind === 'Sedan').length,
+          0,
+        );
+        return {
+          ...zone,
+          cap,
+          occ,
+          suv: `${String(suv).padStart(2, '0')}/${cap}`,
+          sedan: `${String(sedan).padStart(2, '0')}/${cap}`,
+        };
+      }),
+    [sim.blocks],
+  );
+  const current = liveFacility.find((zone) => zone.z === selectedZone)!;
+  const zoneKey = ['A', 'B', 'C'][selectedZone - 1];
+  const zoneBlocks = zoneKey
+    ? sim.blocks.filter((block) => block.zone === zoneKey)
+    : [];
+  const recentCars = sim.jobs
+    .filter((job) => zoneBlocks.some((block) => block.id === job.block))
+    .slice(0, 5);
   return (
     <>
       <div className="blueprint-head">
@@ -227,8 +292,13 @@ export default function FloorPlan() {
           <text x="330" y="497" fill="#5c7796" fontSize="12">
             ← LÀN LƯU THÔNG · VÀO / RA →
           </text>
-          {facility.map((zn) => (
-            <FloorZoneSvg key={zn.z} zn={zn} />
+          {liveFacility.map((zn) => (
+            <FloorZoneSvg
+              key={zn.z}
+              zn={zn}
+              active={zn.z === selectedZone}
+              onPick={() => setSelectedZone(zn.z)}
+            />
           ))}
         </svg>
       </div>
@@ -243,6 +313,54 @@ export default function FloorPlan() {
         </span>
         <span className="muted">Sơ đồ mô phỏng · Puzzle Parking System</span>
       </div>
+      <Panel
+        title={`Chi tiết Zone ${selectedZone}`}
+        aside={
+          <Badge
+            tone={percent(current.occ, current.cap) > 85 ? 'red' : 'green'}
+          >
+            Mật độ {percent(current.occ, current.cap)}%
+          </Badge>
+        }
+        pad
+      >
+        <div className="zone-popup-grid">
+          <div>
+            <span>Sức chứa</span>
+            <strong>{current.cap}</strong>
+          </div>
+          <div>
+            <span>Đang đỗ</span>
+            <strong>{current.occ}</strong>
+          </div>
+          <div>
+            <span>Còn trống</span>
+            <strong>{Math.max(0, current.cap - current.occ)}</strong>
+          </div>
+        </div>
+        <div className="zone-recent">
+          <b>Xe gần đây</b>
+          {recentCars.length ? (
+            recentCars.map((job) => (
+              <button
+                className="mini"
+                key={job.id}
+                onClick={() => {
+                  setSelected(job.block);
+                  setPage('control');
+                }}
+              >
+                {job.plate} · {job.block} · P
+                {String(job.slot + 1).padStart(2, '0')}
+              </button>
+            ))
+          ) : (
+            <span className="muted">
+              Chưa có xe mới trong Zone này ở phiên hiện tại.
+            </span>
+          )}
+        </div>
+      </Panel>
     </>
   );
 }

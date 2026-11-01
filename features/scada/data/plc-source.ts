@@ -5,6 +5,9 @@ import {
   type Alarm,
   type Block,
   type Quality,
+  type CameraVehicle,
+  type PgsSummary,
+  type LedSummary,
 } from '@/features/scada/model/simulation';
 
 /* ============================================================
@@ -40,12 +43,20 @@ export type PlcBlock = {
   online: boolean;
   quality?: Quality;
   lastGoodAt?: number | null;
+  monitored?: boolean;
+  operational?: boolean;
+  parkingClass?: 'any' | 'mechanical-2200' | 'mechanical-2600' | 'ground';
+  lastError?: string | null;
+  retryAt?: number | null;
 };
 export type PlcSnapshot = {
   blocks: PlcBlock[];
   connected: boolean;
   at: number;
   source?: 'plc' | 'mock';
+  lastVehicle?: CameraVehicle | null;
+  pgs?: PgsSummary | null;
+  led?: LedSummary | null;
 };
 
 /* Sim rỗng cho chế độ PLC trong lúc chờ gói đầu tiên — KHÔNG dùng dữ liệu demo. */
@@ -167,6 +178,12 @@ export function buildSim(snap: PlcSnapshot): Sim {
       reportedCount: b.count,
       slots,
       kinds,
+      monitored: b.monitored ?? true,
+      operational: b.operational ?? true,
+      parkingClass: b.parkingClass ?? 'any',
+      lastGoodAt: b.lastGoodAt ?? null,
+      lastError: b.lastError ?? null,
+      retryAt: b.retryAt ?? null,
     });
   });
   return {
@@ -182,6 +199,11 @@ export function buildSim(snap: PlcSnapshot): Sim {
     alarms,
     bypasses: [],
     nextId: 1,
+    integrations: {
+      camera: snap.lastVehicle ?? null,
+      pgs: snap.pgs ?? null,
+      led: snap.led ?? null,
+    },
   };
 }
 

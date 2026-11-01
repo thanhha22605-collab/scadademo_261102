@@ -9,7 +9,16 @@ import {
   Timer,
   Wrench,
 } from 'lucide-react';
-import { Panel, Badge, Bar, Kpi } from '@/features/scada/components/shared';
+import {
+  Panel,
+  Badge,
+  Bar,
+  Kpi,
+  Choice,
+  ConnectionBadge,
+  type ScreenProps,
+} from '@/features/scada/components/shared';
+import { isActiveAlarm } from '@/features/scada/model/simulation';
 import { blockFreq, faultLog } from '@/features/scada/data/demo';
 
 const workOrders = [
@@ -69,10 +78,125 @@ const workOrders = [
     'green',
   ],
 ];
-export default function Maintenance() {
+export default function Maintenance({
+  sim,
+  selected,
+  setSelected,
+}: ScreenProps) {
   const [tab, setTab] = useState('overview');
+  const zones = [...new Set(sim.blocks.map((block) => block.zone))].sort();
+  const [zone, setZone] = useState(zones[0] ?? 'A');
+  const selectedBlock =
+    sim.blocks.find((block) => block.id === selected) ?? sim.blocks[0];
+  const zoneBlocks = sim.blocks.filter((block) => block.zone === zone);
+  const openFaults = sim.alarms.filter(
+    (alarm) =>
+      isActiveAlarm(alarm) &&
+      (!selectedBlock || alarm.block === selectedBlock.id),
+  );
+  const history = [
+    ...sim.logs
+      .filter((log) => !selectedBlock || log.block === selectedBlock.id)
+      .map((log) => [
+        log.time,
+        log.block,
+        'EVENT',
+        log.text,
+        'Đã ghi nhận',
+        '—',
+      ]),
+    ...faultLog,
+  ].slice(0, 20);
+  const motorCycles = selectedBlock
+    ? selectedBlock.capacity * 100 +
+      sim.jobs.filter((job) => job.block === selectedBlock.id).length
+    : 0;
   return (
     <>
+      <div className="occ-badges">
+        <ConnectionBadge sim={sim} />
+        <Badge tone={sim.source === 'sim' ? 'blue' : 'green'}>
+          {sim.source === 'sim'
+            ? 'Dữ liệu nghiệm thu mô phỏng'
+            : 'Dữ liệu gateway'}
+        </Badge>
+      </div>
+      {selectedBlock && (
+        <>
+          <div className="toolbar">
+            <Choice
+              label="Zone"
+              value={zone}
+              onChange={(value) => {
+                setZone(value);
+                const first = sim.blocks.find((block) => block.zone === value);
+                if (first) setSelected(first.id);
+              }}
+              options={zones.map((value) => ({
+                value,
+                label: `Zone ${value}`,
+              }))}
+            />
+            <Choice
+              label="Block"
+              value={selectedBlock.id}
+              onChange={setSelected}
+              options={zoneBlocks.map((block) => ({
+                value: block.id,
+                label: `Block ${block.id}`,
+              }))}
+            />
+          </div>
+          <div className="metrics metrics-3">
+            <Kpi
+              label="Lỗi đang mở"
+              value={String(openFaults.length)}
+              sub={`Block ${selectedBlock.id}`}
+              tone={openFaults.length ? 'red' : 'green'}
+              icon={Activity}
+            />
+            <Kpi
+              label="Chu kỳ motor"
+              value={motorCycles.toLocaleString('vi-VN')}
+              sub="Bộ đếm vận hành"
+              tone="blue"
+              icon={RefreshCw}
+            />
+            <Kpi
+              label="Lịch sử gần nhất"
+              value={String(history.length)}
+              sub="Tối đa 20 bản ghi"
+              tone="purple"
+              icon={FileText}
+            />
+          </div>
+          <Panel title="20 lỗi và sự kiện gần nhất theo Block" pad>
+            <div className="table-scroll">
+              <table className="grid-table">
+                <thead>
+                  <tr>
+                    <th>Thời gian</th>
+                    <th>Block</th>
+                    <th>Mã</th>
+                    <th>Nội dung</th>
+                    <th>Trạng thái</th>
+                    <th>Người ACK</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((row, index) => (
+                    <tr key={`${row[0]}-${index}`}>
+                      {row.map((cell, cellIndex) => (
+                        <td key={cellIndex}>{cell}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        </>
+      )}
       <div className="occ-tabs">
         <button
           className={tab === 'overview' ? 'active' : ''}

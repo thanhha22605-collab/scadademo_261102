@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckCheck, Download, ShieldCheck } from 'lucide-react';
 import {
   blockLabel,
@@ -15,6 +15,7 @@ import {
   time,
   type ScreenProps,
 } from '@/features/scada/components/shared';
+import { downloadXlsx } from '@/features/scada/lib/xlsx';
 
 const catName: Record<string, string> = {
   operator: 'Lỗi thao tác',
@@ -27,14 +28,42 @@ const alarmState = (a: Alarm) =>
 export default function Alarms({ sim, dispatch }: ScreenProps) {
   const [alarmCat, setAlarmCat] = useState('all');
   const [alarmSev, setAlarmSev] = useState('all');
+  const [keyword, setKeyword] = useState('');
+  const [ackTarget, setAckTarget] = useState<Alarm | null>(null);
+  const [ackBy, setAckBy] = useState('supervisor01');
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem('totalparking.alarm-ack') || '{}',
+      ) as Record<string, string>;
+      for (const alarm of sim.alarms)
+        if (!alarm.ack && saved[alarm.id])
+          dispatch({
+            type: 'ack',
+            id: alarm.id,
+            time: time(),
+            by: saved[alarm.id],
+          });
+    } catch {
+      /* bỏ qua dữ liệu ACK cục bộ bị hỏng */
+    }
+    // Snapshot tiếp theo tự giữ ACK theo ID nên nhánh này chỉ dispatch các ACK còn thiếu.
+  }, [dispatch, sim.alarms]);
   const count = (c: string) =>
     sim.alarms.filter((a) => isActiveAlarm(a) && a.cat === c).length;
   const severity = { 'Nghiêm trọng': 4, Cao: 3, 'Trung bình': 2, Thấp: 1 };
+  const normalizedKeyword = keyword.trim().toLocaleLowerCase('vi-VN');
   const rows = sim.alarms
     .filter(
       (a) =>
         (alarmCat === 'all' || a.cat === alarmCat) &&
-        (alarmSev === 'all' || a.sev === alarmSev),
+        (alarmSev === 'all' || a.sev === alarmSev) &&
+        (!normalizedKeyword ||
+          [a.text, a.code, a.device, a.block, a.zone, a.ackBy].some((value) =>
+            String(value ?? '')
+              .toLocaleLowerCase('vi-VN')
+              .includes(normalizedKeyword),
+          )),
     )
     .sort(
       (a, b) =>
@@ -51,6 +80,32 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
     const block = blockOf(id);
     return block ? blockLabel(block) : id;
   };
+  const exportRows = [
+    [
+      'Thời gian',
+      'Phân loại',
+      'Mức độ',
+      'Zone',
+      'Block',
+      'Thiết bị',
+      'Mã lỗi',
+      'Mô tả',
+      'Trạng thái',
+      'Người ACK',
+    ],
+    ...rows.map((a) => [
+      a.at ?? '',
+      a.cat ? catName[a.cat] : '',
+      a.sev ?? '',
+      zoneOf(a),
+      blockName(a.block),
+      a.device ?? '',
+      a.code ?? '',
+      a.text,
+      alarmState(a),
+      a.ackBy ?? '',
+    ]),
+  ];
   return (
     <>
       {sim.source !== 'sim' && (
@@ -95,42 +150,22 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
       <Box
         title="Nhật ký cảnh báo & sự cố"
         aside={
-          <button
-            className="secondary"
-            onClick={() =>
-              csv(
-                [
-                  [
-                    'Thời gian',
-                    'Phân loại',
-                    'Mức độ',
-                    'Zone',
-                    'Block',
-                    'Thiết bị',
-                    'Mã lỗi',
-                    'Mô tả',
-                    'Trạng thái',
-                    'Người ACK',
-                  ],
-                  ...sim.alarms.map((a) => [
-                    a.at ?? '',
-                    a.cat ? catName[a.cat] : '',
-                    a.sev ?? '',
-                    zoneOf(a),
-                    blockName(a.block),
-                    a.device ?? '',
-                    a.code ?? '',
-                    a.text,
-                    alarmState(a),
-                    a.ackBy ?? '',
-                  ]),
-                ],
-                'totalparking-alarms.csv',
-              )
-            }
-          >
-            <Download size={16} /> Xuất CSV
-          </button>
+          <div className="row-actions">
+            <button
+              className="secondary"
+              onClick={() => csv(exportRows, 'totalparking-alarms.csv')}
+            >
+              <Download size={16} /> CSV
+            </button>
+            <button
+              className="secondary"
+              onClick={() =>
+                downloadXlsx(exportRows, 'totalparking-alarms.xlsx', 'Alarms')
+              }
+            >
+              <Download size={16} /> Excel
+            </button>
+          </div>
         }
       >
         <div className="toolbar">
@@ -145,6 +180,14 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
               { value: 'maintenance', label: 'Đến hạn bảo trì' },
             ]}
           />
+          <label className="search-field alarm-search">
+            <input
+              aria-label="Từ khóa cảnh báo"
+              placeholder="Tìm mã lỗi, block, thiết bị, nội dung…"
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+            />
+          </label>
           <Choice
             label="Mức độ"
             value={alarmSev}
@@ -216,9 +259,10 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
                     <button
                       className="secondary"
                       disabled={a.ack || !isActiveAlarm(a)}
-                      onClick={() =>
-                        dispatch({ type: 'ack', id: a.id, time: time() })
-                      }
+                      onClick={() => {
+                        setAckTarget(a);
+                        setAckBy('supervisor01');
+                      }}
                     >
                       <CheckCheck size={15} /> ACK
                     </button>
@@ -235,6 +279,65 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
           </div>
         )}
       </Box>
+      {ackTarget && (
+        <div className="dialog-backdrop" role="presentation">
+          <form
+            className="dialog-card"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const operator = ackBy.trim();
+              if (!operator) return;
+              dispatch({
+                type: 'ack',
+                id: ackTarget.id,
+                time: time(),
+                by: operator,
+              });
+              try {
+                const saved = JSON.parse(
+                  localStorage.getItem('totalparking.alarm-ack') || '{}',
+                ) as Record<string, string>;
+                saved[ackTarget.id] = operator;
+                localStorage.setItem(
+                  'totalparking.alarm-ack',
+                  JSON.stringify(saved),
+                );
+              } catch {
+                /* ACK vẫn có hiệu lực trong phiên hiện tại */
+              }
+              setAckTarget(null);
+            }}
+          >
+            <h2>Xác nhận cảnh báo</h2>
+            <p>
+              {ackTarget.code ?? ackTarget.id} · {ackTarget.text}
+            </p>
+            <label className="field">
+              <span>Người xác nhận</span>
+              <input
+                value={ackBy}
+                onChange={(event) => setAckBy(event.target.value)}
+              />
+            </label>
+            <div className="control-actions">
+              <button
+                className="primary"
+                type="submit"
+                disabled={!ackBy.trim()}
+              >
+                Ghi nhận ACK
+              </button>
+              <button
+                className="secondary"
+                type="button"
+                onClick={() => setAckTarget(null)}
+              >
+                Hủy
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </>
   );
 }

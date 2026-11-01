@@ -1,5 +1,11 @@
 'use client';
-import { Panel, Badge } from '@/features/scada/components/shared';
+import { useEffect, useState } from 'react';
+import {
+  Panel,
+  Badge,
+  type ScreenProps,
+} from '@/features/scada/components/shared';
+import { GATEWAY_HTTP } from '@/features/scada/data/plc-source';
 
 const roles = [
   {
@@ -97,7 +103,38 @@ const audit = [
     'Mật khẩu xác thực cấp 2 sai - Hủy yêu cầu.',
   ],
 ];
-export default function Users() {
+type AuditRow = {
+  id: number;
+  action: string;
+  entity: string;
+  operator: string;
+  detail: string;
+  at: string;
+};
+
+export default function Users({ sim }: ScreenProps) {
+  const live = sim.source !== 'sim';
+  const [liveAudit, setLiveAudit] = useState<AuditRow[]>([]);
+  const [auditError, setAuditError] = useState('');
+  useEffect(() => {
+    if (!live) return;
+    const controller = new AbortController();
+    const load = async () => {
+      try {
+        const response = await fetch(`${GATEWAY_HTTP}/api/audit`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error('MySQL audit log chưa sẵn sàng.');
+        const payload = (await response.json()) as { rows?: AuditRow[] };
+        setLiveAudit(payload.rows ?? []);
+      } catch (error) {
+        if (!controller.signal.aborted)
+          setAuditError(String(error instanceof Error ? error.message : error));
+      }
+    };
+    void load();
+    return () => controller.abort();
+  }, [live]);
   return (
     <>
       <Panel title="Ma trận phân quyền hệ thống (User Permission Matrix)" pad>
@@ -116,21 +153,28 @@ export default function Users() {
       </Panel>
       <div className="two-col">
         <Panel title="Tài khoản đang kết nối trực tuyến" pad>
-          <div className="online-grid">
-            {online.map((o) => (
-              <div className="online" key={o[1]}>
-                <div>
-                  <b>{o[1]}</b>
-                  <small>{o[0]}</small>
+          {live ? (
+            <div className="empty-state">
+              Gateway chưa có dịch vụ xác thực phiên người dùng. Không hiển thị
+              tài khoản online giả trong chế độ PLC thật.
+            </div>
+          ) : (
+            <div className="online-grid">
+              {online.map((o) => (
+                <div className="online" key={o[1]}>
+                  <div>
+                    <b>{o[1]}</b>
+                    <small>{o[0]}</small>
+                  </div>
+                  <div className="online-meta">
+                    <span>Đăng nhập: {o[2]}</span>
+                    <span>IP: {o[3]}</span>
+                  </div>
+                  <Badge tone="green">Online</Badge>
                 </div>
-                <div className="online-meta">
-                  <span>Đăng nhập: {o[2]}</span>
-                  <span>IP: {o[3]}</span>
-                </div>
-                <Badge tone="green">Online</Badge>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </Panel>
         <Panel title="Nhật ký Audit Log vận hành" pad>
           <div className="table-scroll">
@@ -144,21 +188,42 @@ export default function Users() {
                 </tr>
               </thead>
               <tbody>
-                {audit.map((a, i) => (
-                  <tr key={i}>
-                    <td className="mono">{a[0]}</td>
-                    <td>{a[1]}</td>
-                    <td>{a[4]}</td>
-                    <td>
-                      <Badge tone={a[5] ? 'green' : 'red'}>
-                        {a[5] ? 'Thành công' : 'Bị từ chối'}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))}
+                {live
+                  ? liveAudit.map((row) => (
+                      <tr key={row.id}>
+                        <td className="mono">
+                          {new Date(row.at).toLocaleString('vi-VN')}
+                        </td>
+                        <td>{row.operator}</td>
+                        <td>
+                          {row.action} · {row.entity}
+                          <small className="table-sub">{row.detail}</small>
+                        </td>
+                        <td>
+                          <Badge tone="green">Đã ghi DB</Badge>
+                        </td>
+                      </tr>
+                    ))
+                  : audit.map((a, i) => (
+                      <tr key={i}>
+                        <td className="mono">{a[0]}</td>
+                        <td>{a[1]}</td>
+                        <td>{a[4]}</td>
+                        <td>
+                          <Badge tone={a[5] ? 'green' : 'red'}>
+                            {a[5] ? 'Thành công' : 'Bị từ chối'}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
               </tbody>
             </table>
           </div>
+          {live && !liveAudit.length && (
+            <div className="empty-state">
+              {auditError || 'Chưa có thao tác quản trị nào được ghi nhận.'}
+            </div>
+          )}
         </Panel>
       </div>
     </>

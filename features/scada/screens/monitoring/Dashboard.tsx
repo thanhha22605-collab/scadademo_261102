@@ -276,6 +276,25 @@ export default function Dashboard({
               sim.blocks.length > 0 &&
               sim.blocks.every((b) => b.quality === 'good'),
           },
+          {
+            name: 'Camera AI',
+            ok: Boolean(sim.integrations?.camera),
+          },
+          {
+            name: 'Bảng LED TCP',
+            ok: Boolean(
+              sim.integrations?.led?.configured &&
+                sim.integrations.led.online === sim.integrations.led.panels,
+            ),
+          },
+          {
+            name: 'PGS / CCU',
+            ok: Boolean(
+              sim.integrations?.pgs?.configured &&
+                sim.integrations.pgs.listening &&
+                sim.integrations.pgs.connected > 0,
+            ),
+          },
         ];
 
   if (!sim.blocks.length)

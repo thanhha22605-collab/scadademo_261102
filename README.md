@@ -1,6 +1,6 @@
 # TotalParking SCADA — mô phỏng (v2.4)
 
-Ứng dụng web tham khảo giao diện TotalParking do người dùng cung cấp. Dữ liệu mô phỏng gồm 3 Zone (A/B/C), 9 Block, 184 pallet và 91 xe ban đầu (37 SUV · 54 Sedan).
+Ứng dụng SCADA TotalParking có hai chế độ: mô phỏng trên trình duyệt và đọc dữ liệu thật qua gateway tại mạng OT. Dữ liệu mô phỏng gồm 3 Zone (A/B/C), 9 Block, 184 pallet và 91 xe ban đầu (37 SUV · 54 Sedan).
 
 ## Chạy tại máy
 
@@ -14,15 +14,15 @@
 
 ## Các màn hình
 
-21 màn hình chia theo 5 nhóm:
+24 màn hình chia theo 5 nhóm:
 
-- **Giám sát vận hành**: Dashboard tổng quan, Mặt bằng hệ thống (sơ đồ 6 Zone), Điều khiển vận hành (OCC), Điều hướng xe (AI-VDS).
+- **Giám sát vận hành**: Dashboard, mặt bằng động, Zone/Block Monitoring, OCC, điều hướng AI-VDS và màn hình tài xế.
 - **Điều phối xe**: Hàng đợi xe, Truy vết xe & pallet, Tra cứu thẻ ra/vào.
 - **Bảo trì & chẩn đoán**: Alarm & Event, Safety Interlock, Bảo trì hệ thống, Asset Tree, Remote Diagnostics, Historian / Trend.
 - **Quản lý & báo cáo**: Báo cáo & thống kê, Quản lý thẻ RFID, Camera / CCTV, Energy Monitoring.
 - **Cấu hình & bảo mật**: Cấu hình PLC, Cấu hình hệ thống, User & Permission, Backup & Health.
 
-Chỉ các màn hình **Điều khiển vận hành, Hàng đợi xe, Truy vết, Alarm & Event, Safety Interlock, Historian** là tương tác trực tiếp với bộ mô phỏng trong bộ nhớ (nhập/xuất xe, liên động an toàn, xác nhận cảnh báo, xuất CSV). Các màn hình còn lại hiển thị dữ liệu tham khảo tĩnh theo bản v2.4.
+Các màn hình vận hành dùng chung một state mô phỏng; khi bật chế độ PLC, Dashboard, mặt bằng, Zone/Block, OCC, điều hướng, hàng đợi, truy vết, alarm, safety, asset, chẩn đoán và historian nhận snapshot từ gateway. Thẻ RFID, access log, camera và audit đọc API MySQL khi dịch vụ được cấu hình; nếu chưa có dữ liệu thật giao diện ghi rõ trạng thái mô phỏng hoặc chưa kết nối.
 
 ## Thử quy trình
 
@@ -36,13 +36,15 @@ Chỉ các màn hình **Điều khiển vận hành, Hàng đợi xe, Truy vết
 8. Tải CSV nhật ký từ Historian / Trend.
 9. Bấm Khóa ở thanh trên để khóa giao diện mô phỏng (nhập giá trị bất kỳ để mở lại).
 
-## Phạm vi
+## Phạm vi và tích hợp
 
-Chế độ mặc định mô phỏng trong bộ nhớ của mỗi tab; tải lại trang sẽ khởi tạo lại. Gateway FINS/TCP có thể đọc PLC Omron khi bật chế độ PLC, nhưng camera, RFID/LPR và các màn báo cáo tĩnh vẫn là dữ liệu minh họa. Đồng hồ tiến trình phụ thuộc timer của trình duyệt; tab nền có thể chạy chậm hơn. Màn khóa cục bộ không phải hệ thống xác thực thật. Đây chưa phải bộ điều khiển chuyển động hoặc triển khai SCADA công nghiệp đã nghiệm thu hiện trường.
+Chế độ mặc định mô phỏng trong bộ nhớ của mỗi tab; tải lại trang sẽ khởi tạo lại. Gateway hỗ trợ FINS/UDP hoặc FINS/TCP, Camera AI, MySQL cho RFID/access/audit, LED TCP/HTTP và PGS/CCU. Camera không bắt buộc biển số; phân loại và chọn Block dựa trên kích thước, tải trọng và cấu hình Block. Hai cờ `enabled` (có giám sát PLC) và `operational` (có nhận xe mới) được tách riêng để dừng khai thác mà vẫn theo dõi thiết bị.
+
+Đồng hồ tiến trình mô phỏng phụ thuộc timer của trình duyệt; tab nền có thể chạy chậm hơn. Màn khóa cục bộ không phải hệ thống xác thực thật. Ghi PLC bị khóa mặc định, chỉ có các endpoint whitelist và phải hoàn tất FAT/SAT, xác nhận địa chỉ/cực tính tín hiệu tại hiện trường trước khi bật. Đây không thay thế bộ điều khiển chuyển động hoặc nghiệm thu SCADA công nghiệp.
 
 Cấu trúc: `app/` chỉ chứa route/layout; toàn bộ tính năng nằm trong `features/scada/`, chia thành `config`, `components`, `data`, `model` và năm nhóm `screens`. Xem [hướng dẫn cấu trúc](features/scada/README.md). Công cụ WebMCP `navigate_scada_view` chỉ điều hướng giao diện, không gửi lệnh vận hành.
 
-Đã kiểm tra: build, TypeScript, các tình huống mô phỏng trong tests/simulation.mjs và hợp đồng WebMCP (đầu vào hợp lệ / không hợp lệ). Chưa thực hiện kiểm thử tương tác trình duyệt toàn diện.
+Thư mục `source/` chỉ là dự án tham khảo cục bộ, được loại khỏi lint, TypeScript, Git và gói triển khai. Mã giao diện hiện tại không phụ thuộc vào dependency của dự án mẫu.
 
 ## Kết nối PLC thật (Omron FINS/TCP)
 

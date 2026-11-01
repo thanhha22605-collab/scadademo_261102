@@ -18,7 +18,7 @@ features/scada/
 ├── model/
 │   └── simulation.ts           State, action, reducer và liên động mô phỏng
 └── screens/
-    ├── monitoring/             Tổng quan, mặt bằng, OCC và điều hướng
+    ├── monitoring/             Tổng quan, mặt bằng, Zone/Block, OCC, điều hướng và màn tài xế
     ├── dispatch/               Hàng đợi, truy vết và lịch sử RFID
     ├── maintenance/            Alarm, safety, bảo trì và chẩn đoán
     ├── management/             Báo cáo, thẻ, CCTV và điện năng
@@ -39,7 +39,7 @@ features/scada/
 | Sửa riêng một màn hình       | Nhóm tương ứng trong `screens/` |
 | Sửa bố cục tổng thể          | `app/globals.css`               |
 | Sửa tone màu warm glass      | `styles/warm-glass.css`         |
-| Sửa giao thức FINS/TCP       | `gateway/`                      |
+| Sửa FINS/Camera/LED/PGS/API  | `gateway/`                      |
 
 ## Thêm màn hình mới
 
@@ -57,7 +57,8 @@ menu có màn hình nhưng registry chưa khai báo component tương ứng.
 ```text
 Simulation: createSim() ─┐
                          ├─ useSimulation() ─ Sim ─ các màn hình
-PLC: WebSocket gateway ──┘
+PLC/Camera/PGS: gateway ──┘
+MySQL: gateway HTTP API ──────── thẻ, access, audit
 ```
 
 Ở chế độ PLC, `plc-source.ts` chỉ đọc snapshot gateway. Các trường chưa được

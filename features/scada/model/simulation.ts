@@ -27,6 +27,12 @@ export type Block = {
   forced: boolean;
   slots: (string | null)[];
   kinds: (VType | null)[];
+  monitored?: boolean;
+  operational?: boolean;
+  parkingClass?: 'any' | 'mechanical-2200' | 'mechanical-2600' | 'ground';
+  lastGoodAt?: number | null;
+  lastError?: string | null;
+  retryAt?: number | null;
 };
 export type Job = {
   id: number;
@@ -64,6 +70,50 @@ export type Bypass = {
   reason: string;
   at: string;
 };
+export type CameraVehicle = {
+  eventId: string;
+  receivedAt: number;
+  cameraAt?: number | null;
+  plate?: string | null;
+  make?: string | null;
+  model?: string | null;
+  year?: string | null;
+  lengthMm?: number | null;
+  widthMm?: number | null;
+  heightMm?: number | null;
+  weightKg?: number | null;
+  category?: string | null;
+  imagePath?: string | null;
+  lane?: string;
+  weightClass?: string;
+  outcome?: 'routed' | 'rejected' | 'manual-review' | 'no-capacity';
+  reason?: string | null;
+  zone?: string;
+  block?: string;
+};
+export type PgsSummary = {
+  configured: boolean;
+  listening: boolean;
+  port?: number | null;
+  zcuTotal: number;
+  connected: number;
+  empty: number;
+  occupied: number;
+  fault: number;
+  uninstalled: number;
+  lastAt?: number | null;
+};
+export type LedSummary = {
+  configured: boolean;
+  panels: number;
+  online: number;
+  items?: {
+    id: string;
+    online: boolean;
+    lastOkAt?: number | null;
+    lastError?: string | null;
+  }[];
+};
 export type Sim = {
   clockMs: number;
   source: 'sim' | 'plc' | 'mock';
@@ -75,6 +125,11 @@ export type Sim = {
   alarms: Alarm[];
   bypasses: Bypass[];
   nextId: number;
+  integrations?: {
+    camera?: CameraVehicle | null;
+    pgs?: PgsSummary | null;
+    led?: LedSummary | null;
+  };
 };
 export const zoneLabel: Record<string, string> = {
   A: 'Zone A – Hầm B1',
@@ -292,7 +347,7 @@ export function createSim(): Sim {
         code: 'E-0901',
         device: 'PLC-Link',
         at: '08:05:12',
-        text: 'Mất kết nối bộ điều khiển mô phỏng (Modbus TCP timeout).',
+        text: 'Mất kết nối bộ điều khiển mô phỏng (FINS timeout).',
         ack: false,
       },
       {
@@ -475,6 +530,7 @@ export type Action =
     }
   | { type: 'cancel'; id: number; time: string }
   | { type: 'ack'; id: string; time: string; by?: string }
+  | { type: 'report-incident'; block: string; time: string; by?: string }
   | {
       type: 'toggle';
       block: string;
@@ -566,9 +622,17 @@ export function reduceSim(state: Sim, a: Action): Sim {
           }
         : alarm;
     });
+    const localIncidents = state.alarms.filter(
+      (alarm) =>
+        alarm.id.startsWith('INCIDENT-') &&
+        !next.alarms.some((item) => item.id === alarm.id),
+    );
     const resolved = state.alarms
       .filter(
-        (x) => isActiveAlarm(x) && !next.alarms.some((a) => a.id === x.id),
+        (x) =>
+          !x.id.startsWith('INCIDENT-') &&
+          isActiveAlarm(x) &&
+          !next.alarms.some((a) => a.id === x.id),
       )
       .map((x) => ({
         ...x,
@@ -577,6 +641,7 @@ export function reduceSim(state: Sim, a: Action): Sim {
       }));
     next.alarms = [
       ...next.alarms,
+      ...localIncidents,
       ...resolved,
       ...state.alarms.filter(
         (x) => !isActiveAlarm(x) && !next.alarms.some((a) => a.id === x.id),
@@ -584,7 +649,12 @@ export function reduceSim(state: Sim, a: Action): Sim {
     ].slice(0, 500);
     return next;
   }
-  if (state.source !== 'sim' && a.type !== 'ack') return state;
+  if (
+    state.source !== 'sim' &&
+    a.type !== 'ack' &&
+    a.type !== 'report-incident'
+  )
+    return state;
   if (a.type === 'dispatch' && validateDispatch(state, a)) return state;
   const s: Sim = structuredClone(state);
   const log = (block: string, text: string) => {
@@ -718,6 +788,28 @@ export function reduceSim(state: Sim, a: Action): Sim {
       alarm.ackBy = a.by ?? 'supervisor01';
       log(alarm.block, `Xác nhận cảnh báo ${alarm.id}`);
     }
+  }
+  if (a.type === 'report-incident') {
+    const block = s.blocks.find((item) => item.id === a.block);
+    if (!block) return state;
+    const id = `INCIDENT-${s.nextId++}`;
+    s.alarms.unshift({
+      id,
+      block: block.id,
+      zone: block.zone,
+      cat: 'operator',
+      sev: 'Nghiêm trọng',
+      code: 'SU-CO-KHAN',
+      device: 'HMI-Panel',
+      text: 'Người vận hành báo sự cố khẩn. Chỉ ghi nhận cảnh báo, không gửi lệnh dừng PLC.',
+      ack: false,
+      active: true,
+      at: a.time,
+    });
+    log(
+      block.id,
+      `Báo sự cố khẩn bởi ${a.by ?? 'supervisor01'}; không gửi lệnh dừng máy`,
+    );
   }
   if (a.type === 'toggle') {
     const b = s.blocks.find((b) => b.id === a.block);

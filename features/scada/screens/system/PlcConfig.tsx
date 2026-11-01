@@ -19,6 +19,8 @@ type UnitCfg = {
   host?: string;
   port?: number | string;
   protocol?: string;
+  operational?: boolean;
+  parkingClass?: 'any' | 'mechanical-2200' | 'mechanical-2600' | 'ground';
 };
 type Preset = { key: string; label: string; capacity: number };
 type GatewayStatus =
@@ -67,7 +69,9 @@ function readDraft(): UnitCfg[] {
       return value.map((unit) => ({
         ...unit,
         id: unit.id || newId(),
-        protocol: 'tcp',
+        protocol: unit.protocol === 'tcp' ? 'tcp' : 'udp',
+        operational: unit.operational !== false,
+        parkingClass: unit.parkingClass ?? 'any',
       }));
   } catch {
     /* bản nháp hỏng được bỏ qua */
@@ -167,7 +171,9 @@ export default function PlcConfig(_: ScreenProps) {
         enabled: true,
         host: ip(n),
         port: 9600,
-        protocol: 'tcp',
+        protocol: 'udp',
+        operational: true,
+        parkingClass: 'any',
       },
     ]);
   };
@@ -208,7 +214,9 @@ export default function PlcConfig(_: ScreenProps) {
         (Array.isArray(data.units) ? data.units : []).map((unit) => ({
           ...unit,
           id: unit.id || newId(),
-          protocol: 'tcp',
+          protocol: unit.protocol === 'tcp' ? 'tcp' : 'udp',
+          operational: unit.operational !== false,
+          parkingClass: unit.parkingClass ?? 'any',
         })),
       );
       setStatus('online');
@@ -377,6 +385,7 @@ export default function PlcConfig(_: ScreenProps) {
             <thead>
               <tr>
                 <th>Bật</th>
+                <th>Nhận xe</th>
                 <th>Block (N)</th>
                 <th>Tên hiển thị</th>
                 <th>Loại tháp</th>
@@ -385,6 +394,7 @@ export default function PlcConfig(_: ScreenProps) {
                 <th>Protocol</th>
                 <th>Cửa đóng</th>
                 <th>Zone</th>
+                <th>Năng lực đỗ</th>
                 <th>Sức chứa</th>
                 <th>Thao tác</th>
               </tr>
@@ -403,6 +413,16 @@ export default function PlcConfig(_: ScreenProps) {
                         aria-label={`Bật PLC ${unit.name}`}
                         onChange={(event) =>
                           patch(index, 'enabled', event.target.checked)
+                        }
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={unit.operational !== false}
+                        aria-label={`Cho phép ${unit.name} nhận xe`}
+                        onChange={(event) =>
+                          patch(index, 'operational', event.target.checked)
                         }
                       />
                     </td>
@@ -469,7 +489,17 @@ export default function PlcConfig(_: ScreenProps) {
                       />
                     </td>
                     <td>
-                      <span className="mono">TCP</span>
+                      <select
+                        aria-label={`Giao thức FINS ${unit.name}`}
+                        className="cfg-in sm"
+                        value={unit.protocol ?? 'udp'}
+                        onChange={(event) =>
+                          patch(index, 'protocol', event.target.value)
+                        }
+                      >
+                        <option value="udp">UDP</option>
+                        <option value="tcp">TCP</option>
+                      </select>
                     </td>
                     <td>
                       <select
@@ -493,6 +523,29 @@ export default function PlcConfig(_: ScreenProps) {
                           patch(index, 'zone', event.target.value)
                         }
                       />
+                    </td>
+                    <td>
+                      <select
+                        aria-label={`Năng lực đỗ ${unit.name}`}
+                        className="cfg-in"
+                        value={unit.parkingClass ?? 'any'}
+                        onChange={(event) =>
+                          patch(
+                            index,
+                            'parkingClass',
+                            event.target.value as UnitCfg['parkingClass'],
+                          )
+                        }
+                      >
+                        <option value="any">Chưa phân loại / dùng chung</option>
+                        <option value="mechanical-2200">
+                          Pallet ≤ 2200 kg
+                        </option>
+                        <option value="mechanical-2600">
+                          Pallet ≤ 2600 kg
+                        </option>
+                        <option value="ground">Đỗ nền</option>
+                      </select>
                     </td>
                     <td className="mono">{capacity}</td>
                     <td>

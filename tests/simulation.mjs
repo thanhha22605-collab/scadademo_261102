@@ -272,6 +272,41 @@ assert.equal(s.jobs[0].progress, 0);
   assert.ok(finished <= 200, `#4 lệnh đã kết thúc bị giới hạn (=${finished})`);
 }
 
+/* --- Hồi quy: báo sự cố chỉ tạo alarm, không gửi STOP/không dừng job --- */
+{
+  const T = 't';
+  let incident = createSim();
+  const before = incident.jobs.find((job) => job.id === 1);
+  incident = reduceSim(incident, {
+    type: 'report-incident',
+    block: 'A-02',
+    time: T,
+    by: 'SAT-OPERATOR',
+  });
+  const after = incident.jobs.find((job) => job.id === 1);
+  assert.equal(
+    after.status,
+    before.status,
+    'báo sự cố không đổi trạng thái job',
+  );
+  assert.equal(
+    after.progress,
+    before.progress,
+    'báo sự cố không đổi tiến độ job',
+  );
+  assert.equal(
+    incident.blocks.find((block) => block.id === 'A-02').paused,
+    false,
+    'báo sự cố không pause Block',
+  );
+  assert.ok(
+    incident.alarms.some(
+      (alarm) => alarm.code === 'SU-CO-KHAN' && isActiveAlarm(alarm),
+    ),
+    'báo sự cố tạo alarm đang hoạt động',
+  );
+}
+
 console.log(
-  'PASS: occupancy, dispatch, queue, latched interlocks, explicit resume, ACK semantics, reconnect fault retention, VIP serialization, bypass expiry, unique alarms, completion, retrieval, cancellation, validation, maintenance, E-STOP, offline, fault/jam decouple, lock-unlock, alarm resolve, job pruning.',
+  'PASS: occupancy, dispatch, queue, latched interlocks, explicit resume, ACK semantics, reconnect fault retention, VIP serialization, bypass expiry, unique alarms, completion, retrieval, cancellation, validation, maintenance, E-STOP, offline, fault/jam decouple, lock-unlock, alarm resolve, job pruning, incident reporting without PLC stop.',
 );

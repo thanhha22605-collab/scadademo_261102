@@ -58,6 +58,8 @@ export type CardRow = {
   active: boolean;
   synced: boolean;
   last: string;
+  batch?: string;
+  weight?: 'Dưới 2200' | '2200–2600' | 'Trên 2600';
 };
 export const seedCards: CardRow[] = [
   {

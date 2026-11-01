@@ -169,23 +169,64 @@ function ReportBody({ cat }: { cat: number }) {
 }
 export default function Reports() {
   const [cat, setCat] = useState(0);
+  const [from, setFrom] = useState('2026-10-01');
+  const [to, setTo] = useState('2026-11-01');
+  const [zone, setZone] = useState('all');
   return (
-    <div className="two-col reports-col">
-      <Panel title="Danh mục báo cáo" pad>
-        <div className="report-cats">
-          {reportCats.map((c, i) => (
-            <button
-              key={c}
-              className={i === cat ? 'active' : ''}
-              onClick={() => setCat(i)}
+    <div className="stack">
+      <Panel title="Bộ lọc báo cáo nghiệm thu" pad>
+        <div className="toolbar">
+          <label className="field">
+            <span>Từ ngày</span>
+            <input
+              type="date"
+              value={from}
+              onChange={(event) => setFrom(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span>Đến ngày</span>
+            <input
+              type="date"
+              value={to}
+              onChange={(event) => setTo(event.target.value)}
+            />
+          </label>
+          <label className="field">
+            <span>Zone</span>
+            <select
+              value={zone}
+              onChange={(event) => setZone(event.target.value)}
             >
-              {c}
-            </button>
-          ))}
+              <option value="all">Tất cả Zone</option>
+              <option value="A">Zone A</option>
+              <option value="B">Zone B</option>
+              <option value="C">Zone C</option>
+            </select>
+          </label>
         </div>
+        <p className="hint">
+          Đang xem dữ liệu từ {from} đến {to} ·{' '}
+          {zone === 'all' ? 'Tất cả Zone' : `Zone ${zone}`}.
+        </p>
       </Panel>
-      <div className="stack">
-        <ReportBody cat={cat} />
+      <div className="two-col reports-col">
+        <Panel title="Danh mục báo cáo" pad>
+          <div className="report-cats">
+            {reportCats.map((c, i) => (
+              <button
+                key={c}
+                className={i === cat ? 'active' : ''}
+                onClick={() => setCat(i)}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </Panel>
+        <div className="stack">
+          <ReportBody cat={cat} />
+        </div>
       </div>
     </div>
   );
