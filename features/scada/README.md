@@ -27,18 +27,19 @@ features/scada/
 
 ## Sửa ở đâu
 
-| Nhu cầu                        | File/thư mục                    |
-| ------------------------------ | ------------------------------- |
-| Đổi tên hoặc thứ tự menu       | `config/navigation.tsx`         |
-| Gắn một màn hình vào menu      | `config/screen-registry.ts`     |
-| Sửa khung sidebar/header       | `ScadaApp.tsx`                  |
-| Sửa logic mô phỏng/liên động   | `model/simulation.ts`           |
-| Sửa kết nối gateway PLC        | `data/plc-source.ts`            |
-| Sửa dữ liệu minh họa           | `data/demo.ts`                  |
-| Sửa component dùng chung       | `components/shared.tsx`         |
-| Sửa riêng một màn hình         | Nhóm tương ứng trong `screens/` |
-| Sửa màu sắc và bố cục tổng thể | `app/globals.css`               |
-| Sửa giao thức FINS/TCP         | `gateway/`                      |
+| Nhu cầu                      | File/thư mục                    |
+| ---------------------------- | ------------------------------- |
+| Đổi tên hoặc thứ tự menu     | `config/navigation.tsx`         |
+| Gắn một màn hình vào menu    | `config/screen-registry.ts`     |
+| Sửa khung sidebar/header     | `ScadaApp.tsx`                  |
+| Sửa logic mô phỏng/liên động | `model/simulation.ts`           |
+| Sửa kết nối gateway PLC      | `data/plc-source.ts`            |
+| Sửa dữ liệu minh họa         | `data/demo.ts`                  |
+| Sửa component dùng chung     | `components/shared.tsx`         |
+| Sửa riêng một màn hình       | Nhóm tương ứng trong `screens/` |
+| Sửa bố cục tổng thể          | `app/globals.css`               |
+| Sửa tone màu warm glass      | `styles/warm-glass.css`         |
+| Sửa giao thức FINS/TCP       | `gateway/`                      |
 
 ## Thêm màn hình mới
 

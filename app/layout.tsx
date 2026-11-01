@@ -1,15 +1,18 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { Be_Vietnam_Pro, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
+import '@/features/scada/styles/warm-glass.css';
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
+const beVietnam = Be_Vietnam_Pro({
+  variable: '--font-be-vietnam',
+  weight: ['400', '500', '600', '700'],
+  subsets: ['latin', 'vietnamese'],
 });
 
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
+const jetBrainsMono = JetBrains_Mono({
+  variable: '--font-jetbrains-mono',
+  weight: ['400', '600', '700'],
+  subsets: ['latin', 'vietnamese'],
 });
 
 export const metadata: Metadata = {
@@ -22,12 +25,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="vi" className="dark">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
-      </body>
+    <html
+      lang="vi"
+      className={`${beVietnam.variable} ${jetBrainsMono.variable} warm-glass-theme`}
+    >
+      <body className="antialiased">{children}</body>
     </html>
   );
 }
