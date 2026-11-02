@@ -73,6 +73,10 @@ const MAP_CAPACITY = MAP_BLOCKS.reduce(
   (total, block) => total + block.capacity,
   0,
 );
+const MAP_IMAGE = `${
+  (import.meta as ImportMeta & { env?: { BASE_URL?: string } }).env?.BASE_URL ??
+  '/'
+}taseco-b1-floorplan.png`;
 
 function levelOf(block?: Block): MapLevel {
   if (!block) return 'unmapped';
@@ -239,7 +243,7 @@ export default function FloorPlan({ sim, setSelected, setPage }: ScreenProps) {
         <div className="floor-map-viewport">
           <div className="floor-map-canvas" style={{ width: `${zoom * 100}%` }}>
             <Image
-              src="/taseco-b1-floorplan.png"
+              src={MAP_IMAGE}
               alt="Mặt bằng giao thông tầng hầm B1 dự án TASECO Long Biên Central"
               width={1850}
               height={2400}
