@@ -15,6 +15,7 @@ import {
 import {
   databaseConfigured,
   databaseReady,
+  deleteCard,
   initDatabase,
   listAccessEvents,
   listAlarmAcks,
@@ -306,6 +307,24 @@ const server = http.createServer(async (req, res) => {
       return json(res, 400, { ok: false, error: error.message });
     }
   }
+  if (pathname === '/api/cards' && req.method === 'DELETE') {
+    if (!authorized(req.headers.authorization, config.adminToken))
+      return json(res, 401, {
+        ok: false,
+        error: 'Cần token quản trị gateway.',
+      });
+    if (!databaseReady())
+      return json(res, 503, { ok: false, error: 'MySQL chưa sẵn sàng.' });
+    try {
+      const data = await readJsonBody(req);
+      if (!data.id || !data.by)
+        throw new Error('Thiếu mã thẻ hoặc người thao tác.');
+      await deleteCard(String(data.id), String(data.by));
+      return json(res, 200, { ok: true });
+    } catch (error) {
+      return json(res, 400, { ok: false, error: error.message });
+    }
+  }
   if (pathname === '/api/alarms/ack' && req.method === 'POST') {
     if (!authorized(req.headers.authorization, config.adminToken))
       return json(res, 401, {
@@ -318,7 +337,12 @@ const server = http.createServer(async (req, res) => {
       const data = await readJsonBody(req);
       if (!data.id || !data.by)
         throw new Error('Thiếu mã alarm hoặc người xác nhận.');
-      await saveAlarmAck(String(data.id), String(data.by));
+      const saved = await saveAlarmAck(String(data.id), String(data.by));
+      if (!saved)
+        return json(res, 409, {
+          ok: false,
+          error: 'Cảnh báo đã được xác nhận trước đó.',
+        });
       return json(res, 200, { ok: true });
     } catch (error) {
       return json(res, 400, { ok: false, error: error.message });

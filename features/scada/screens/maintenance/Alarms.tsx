@@ -16,6 +16,7 @@ import {
   type ScreenProps,
 } from '@/features/scada/components/shared';
 import { downloadXlsx } from '@/features/scada/lib/xlsx';
+import { GATEWAY_HTTP } from '@/features/scada/data/plc-source';
 
 const catName: Record<string, string> = {
   operator: 'Lỗi thao tác',
@@ -31,7 +32,10 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
   const [keyword, setKeyword] = useState('');
   const [ackTarget, setAckTarget] = useState<Alarm | null>(null);
   const [ackBy, setAckBy] = useState('supervisor01');
+  const [gatewayToken, setGatewayToken] = useState('');
+  const [ackNote, setAckNote] = useState('');
   useEffect(() => {
+    if (sim.source !== 'sim') return;
     try {
       const saved = JSON.parse(
         localStorage.getItem('totalparking.alarm-ack') || '{}',
@@ -48,7 +52,37 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
       /* bỏ qua dữ liệu ACK cục bộ bị hỏng */
     }
     // Snapshot tiếp theo tự giữ ACK theo ID nên nhánh này chỉ dispatch các ACK còn thiếu.
-  }, [dispatch, sim.alarms]);
+  }, [dispatch, sim.alarms, sim.source]);
+  useEffect(() => {
+    if (sim.source === 'sim') return;
+    const controller = new AbortController();
+    const refresh = async () => {
+      try {
+        const response = await fetch(`${GATEWAY_HTTP}/api/alarms/ack`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) return;
+        const payload = (await response.json()) as {
+          acks?: { alarm_id: string; acknowledged_by: string }[];
+        };
+        for (const ack of payload.acks ?? [])
+          dispatch({
+            type: 'ack',
+            id: ack.alarm_id,
+            time: time(),
+            by: ack.acknowledged_by,
+          });
+      } catch {
+        /* trạng thái kết nối đã được hiển thị ở header */
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 15000);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+    };
+  }, [dispatch, sim.source]);
   const count = (c: string) =>
     sim.alarms.filter((a) => isActiveAlarm(a) && a.cat === c).length;
   const severity = { 'Nghiêm trọng': 4, Cao: 3, 'Trung bình': 2, Thấp: 1 };
@@ -110,11 +144,12 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
     <>
       {sim.source !== 'sim' && (
         <div className="notice amber">
-          ACK hiện chỉ được lưu trong phiên trình duyệt và không ghi về PLC.
-          Trạng thái alarm vẫn “đang hoạt động” cho tới khi tín hiệu thực tế trở
-          lại bình thường.
+          ACK được ghi vào CSDL qua gateway sau khi xác thực token quản trị;
+          không gửi lệnh xuống PLC. Alarm vẫn “đang hoạt động” cho tới khi tín
+          hiệu thực tế trở lại bình thường.
         </div>
       )}
+      {ackNote && <output className="notice amber">{ackNote}</output>}
       <div className="metrics metrics-4">
         <div className="kpi kpi-red">
           <div className="kpi-top">
@@ -258,8 +293,15 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
                   <td>
                     <button
                       className="secondary"
-                      disabled={a.ack || !isActiveAlarm(a)}
+                      disabled={!isActiveAlarm(a)}
                       onClick={() => {
+                        if (a.ack) {
+                          setAckNote(
+                            `Từ chối ACK lại ${a.code ?? a.id}: cảnh báo đã được ${a.ackBy ?? 'người vận hành'} xác nhận.`,
+                          );
+                          return;
+                        }
+                        setAckNote('');
                         setAckTarget(a);
                         setAckBy('supervisor01');
                       }}
@@ -283,17 +325,47 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
         <div className="dialog-backdrop" role="presentation">
           <form
             className="dialog-card"
-            onSubmit={(event) => {
+            onSubmit={async (event) => {
               event.preventDefault();
               const operator = ackBy.trim();
               if (!operator) return;
+              if (sim.source !== 'sim') {
+                if (gatewayToken.length < 24) {
+                  setAckNote('Token quản trị gateway phải có ít nhất 24 ký tự.');
+                  return;
+                }
+                try {
+                  const response = await fetch(
+                    `${GATEWAY_HTTP}/api/alarms/ack`,
+                    {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${gatewayToken}`,
+                      },
+                      body: JSON.stringify({ id: ackTarget.id, by: operator }),
+                    },
+                  );
+                  const payload = (await response.json()) as {
+                    error?: string;
+                  };
+                  if (!response.ok)
+                    throw new Error(payload.error || `HTTP ${response.status}`);
+                } catch (error) {
+                  setAckNote(
+                    'Không ghi được ACK: ' +
+                      (error instanceof Error ? error.message : String(error)),
+                  );
+                  return;
+                }
+              }
               dispatch({
                 type: 'ack',
                 id: ackTarget.id,
                 time: time(),
                 by: operator,
               });
-              try {
+              if (sim.source === 'sim') try {
                 const saved = JSON.parse(
                   localStorage.getItem('totalparking.alarm-ack') || '{}',
                 ) as Record<string, string>;
@@ -305,6 +377,7 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
               } catch {
                 /* ACK vẫn có hiệu lực trong phiên hiện tại */
               }
+              setAckNote(`Đã ghi nhận ACK ${ackTarget.code ?? ackTarget.id}.`);
               setAckTarget(null);
             }}
           >
@@ -319,11 +392,26 @@ export default function Alarms({ sim, dispatch }: ScreenProps) {
                 onChange={(event) => setAckBy(event.target.value)}
               />
             </label>
+            {sim.source !== 'sim' && (
+              <label className="field">
+                <span>Token quản trị gateway</span>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  value={gatewayToken}
+                  onChange={(event) => setGatewayToken(event.target.value)}
+                  placeholder="Không lưu trong trình duyệt"
+                />
+              </label>
+            )}
             <div className="control-actions">
               <button
                 className="primary"
                 type="submit"
-                disabled={!ackBy.trim()}
+                disabled={
+                  !ackBy.trim() ||
+                  (sim.source !== 'sim' && gatewayToken.length < 24)
+                }
               >
                 Ghi nhận ACK
               </button>

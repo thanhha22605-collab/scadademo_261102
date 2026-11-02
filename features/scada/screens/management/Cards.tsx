@@ -69,6 +69,7 @@ export default function Cards({ sim }: ScreenProps) {
   const [batch, setBatch] = useState('all');
   const [weight, setWeight] = useState('all');
   const [operator, setOperator] = useState('supervisor01');
+  const [adminToken, setAdminToken] = useState('');
   const [editing, setEditing] = useState<CardRow | null>(null);
   const [importRows, setImportRows] = useState<ImportRow[]>([]);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -144,10 +145,40 @@ export default function Cards({ sim }: ScreenProps) {
     );
   }, [rows, query, batch, weight]);
 
-  const saveCard = (card: CardRow) => {
+  const liveRequest = async (
+    method: 'PUT' | 'DELETE',
+    payload: { card: CardRow; by: string } | { id: string; by: string },
+  ) => {
+    if (adminToken.length < 24)
+      throw new Error('Token quản trị gateway phải có ít nhất 24 ký tự.');
+    const response = await fetch(`${GATEWAY_HTTP}/api/cards`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${adminToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const result = (await response.json()) as { error?: string };
+    if (!response.ok)
+      throw new Error(result.error || `Gateway trả về HTTP ${response.status}.`);
+  };
+
+  const saveCard = async (card: CardRow) => {
     if (!operator.trim()) {
       setNote('Phải nhập tên người thao tác.');
       return;
+    }
+    if (live) {
+      try {
+        await liveRequest('PUT', { card, by: operator.trim() });
+      } catch (error) {
+        setNote(
+          'Không lưu được thẻ: ' +
+            (error instanceof Error ? error.message : String(error)),
+        );
+        return;
+      }
     }
     if (!card.id.trim() || !card.uid.trim() || !card.plate.trim()) {
       setNote('Mã thẻ, UID và biển số là bắt buộc.');
@@ -161,6 +192,48 @@ export default function Cards({ sim }: ScreenProps) {
     });
     setEditing(null);
     setNote(`Đã lưu thẻ ${card.id} · người thao tác ${operator.trim()}.`);
+  };
+
+  const toggleCard = async (card: CardRow) => {
+    if (!operator.trim()) return setNote('Phải nhập người thao tác.');
+    if (!live && card.active && (parked(card) || scannedWithin24Hours(card)))
+      return setNote(
+        `Từ chối khóa ${card.id}: thẻ đang ở ô đỗ hoặc vừa quẹt trong 24 giờ.`,
+      );
+    const next = { ...card, active: !card.active };
+    if (live) {
+      try {
+        await liveRequest('PUT', { card: next, by: operator.trim() });
+      } catch (error) {
+        return setNote(
+          'Từ chối thao tác: ' +
+            (error instanceof Error ? error.message : String(error)),
+        );
+      }
+    }
+    setRows((current) =>
+      current.map((item) => (item.id === card.id ? next : item)),
+    );
+    setNote(
+      `${card.active ? 'Đã khóa' : 'Đã mở khóa'} ${card.id} · ${operator.trim()}.`,
+    );
+  };
+
+  const removeCard = async (card: CardRow) => {
+    if (!operator.trim()) return setNote('Phải nhập người thao tác.');
+    if (card.active) return setNote('Chỉ được xóa thẻ đã khóa.');
+    if (live) {
+      try {
+        await liveRequest('DELETE', { id: card.id, by: operator.trim() });
+      } catch (error) {
+        return setNote(
+          'Không xóa được thẻ: ' +
+            (error instanceof Error ? error.message : String(error)),
+        );
+      }
+    }
+    setRows((current) => current.filter((item) => item.id !== card.id));
+    setNote(`Đã xóa ${card.id} · ${operator.trim()}.`);
   };
 
   const exportAll = () =>
@@ -254,8 +327,20 @@ export default function Cards({ sim }: ScreenProps) {
     }
   };
 
-  const applyImport = () => {
+  const applyImport = async () => {
     const valid = importRows.flatMap((item) => (item.card ? [item.card] : []));
+    if (live) {
+      try {
+        for (const card of valid)
+          await liveRequest('PUT', { card, by: operator.trim() });
+      } catch (error) {
+        setNote(
+          'Dừng nhập dữ liệu: ' +
+            (error instanceof Error ? error.message : String(error)),
+        );
+        return;
+      }
+    }
     setRows((current) => {
       const next = [...current];
       for (const card of valid) {
@@ -278,9 +363,9 @@ export default function Cards({ sim }: ScreenProps) {
     <>
       {live && (
         <output className="notice amber">
-          Chế độ PLC thật: danh sách đang đọc từ MySQL. Các thao tác sửa, khóa,
-          xóa và import cần phiên quản trị phía server nên được khóa trên trình
-          duyệt công khai.
+          Chế độ PLC thật: danh sách đọc/ghi MySQL qua gateway. Sửa, khóa, xóa
+          và nhập Excel chỉ được thực hiện khi có token quản trị; token chỉ nằm
+          trong bộ nhớ của tab hiện tại.
         </output>
       )}
       <div className="metrics metrics-3">
@@ -349,11 +434,23 @@ export default function Cards({ sim }: ScreenProps) {
               onChange={(event) => setOperator(event.target.value)}
             />
           </label>
+          {live && (
+            <label className="field">
+              <span>Token quản trị gateway</span>
+              <input
+                type="password"
+                autoComplete="off"
+                value={adminToken}
+                onChange={(event) => setAdminToken(event.target.value)}
+                placeholder="Tối thiểu 24 ký tự"
+              />
+            </label>
+          )}
         </div>
         <div className="row-actions">
           <button
             className="secondary"
-            disabled={live}
+            disabled={live && adminToken.length < 24}
             onClick={() =>
               setEditing({
                 id: `TH-${String(rows.length + 1000).padStart(5, '0')}`,
@@ -384,7 +481,6 @@ export default function Cards({ sim }: ScreenProps) {
             <input
               ref={fileInput}
               type="file"
-              disabled={live}
               accept=".xlsx"
               onChange={(event) => {
                 const file = event.target.files?.[0];
@@ -395,9 +491,11 @@ export default function Cards({ sim }: ScreenProps) {
           <button
             className="primary"
             disabled={
-              live || !importRows.some((item) => item.card) || !operator.trim()
+              !importRows.some((item) => item.card) ||
+              !operator.trim() ||
+              (live && adminToken.length < 24)
             }
-            onClick={applyImport}
+            onClick={() => void applyImport()}
           >
             Nhập dữ liệu
           </button>
@@ -469,7 +567,7 @@ export default function Cards({ sim }: ScreenProps) {
                       <button
                         className="mini"
                         aria-label={`Sửa thẻ ${card.id}`}
-                        disabled={live}
+                        disabled={live && adminToken.length < 24}
                         onClick={() => setEditing({ ...card })}
                       >
                         <Pencil size={13} /> Sửa
@@ -477,43 +575,18 @@ export default function Cards({ sim }: ScreenProps) {
                       <button
                         className="mini"
                         aria-label={`${card.active ? 'Khóa' : 'Mở khóa'} thẻ ${card.id}`}
-                        disabled={live}
-                        onClick={() => {
-                          if (!operator.trim())
-                            return setNote('Phải nhập người thao tác.');
-                          if (
-                            card.active &&
-                            (parked(card) || scannedWithin24Hours(card))
-                          )
-                            return setNote(
-                              `Từ chối khóa ${card.id}: thẻ đang ở ô đỗ hoặc vừa quẹt trong 24 giờ.`,
-                            );
-                          setRows((current) =>
-                            current.map((item) =>
-                              item.id === card.id
-                                ? { ...item, active: !item.active }
-                                : item,
-                            ),
-                          );
-                          setNote(
-                            `${card.active ? 'Đã khóa' : 'Đã mở khóa'} ${card.id} · ${operator}.`,
-                          );
-                        }}
+                        disabled={live && adminToken.length < 24}
+                        onClick={() => void toggleCard(card)}
                       >
                         <Lock size={13} /> {card.active ? 'Khóa' : 'Mở'}
                       </button>
                       <button
                         className="mini danger"
                         aria-label={`Xóa thẻ ${card.id}`}
-                        disabled={live || card.active}
-                        onClick={() => {
-                          if (card.active)
-                            return setNote('Chỉ được xóa thẻ đã khóa.');
-                          setRows((current) =>
-                            current.filter((item) => item.id !== card.id),
-                          );
-                          setNote(`Đã xóa ${card.id} · ${operator}.`);
-                        }}
+                        disabled={
+                          card.active || (live && adminToken.length < 24)
+                        }
+                        onClick={() => void removeCard(card)}
                       >
                         <Trash2 size={13} /> Xóa
                       </button>
@@ -532,7 +605,7 @@ export default function Cards({ sim }: ScreenProps) {
             className="dialog-card wide"
             onSubmit={(event) => {
               event.preventDefault();
-              saveCard(editing);
+              void saveCard(editing);
             }}
           >
             <h2>Thông tin thẻ RFID</h2>

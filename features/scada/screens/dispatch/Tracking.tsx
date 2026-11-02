@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Search } from 'lucide-react';
 import {
   Table,
@@ -10,6 +10,8 @@ import {
   TableCell,
 } from '@/components/ui/table';
 import { countOf, blockLabel } from '@/features/scada/model/simulation';
+import { seedCards, type CardRow } from '@/features/scada/data/demo';
+import { GATEWAY_HTTP } from '@/features/scada/data/plc-source';
 import {
   Box,
   Badge,
@@ -21,6 +23,33 @@ import {
 
 export default function Tracking({ sim }: ScreenProps) {
   const [query, setQuery] = useState('');
+  const [cards, setCards] = useState<CardRow[]>(seedCards);
+  useEffect(() => {
+    if (sim.source === 'sim') {
+      const timer = window.setTimeout(() => {
+        try {
+          const saved = JSON.parse(
+            localStorage.getItem('totalparking.rfid-cards') || 'null',
+          );
+          if (Array.isArray(saved)) setCards(saved);
+        } catch {
+          /* dùng danh sách mẫu nếu bản lưu cục bộ bị hỏng */
+        }
+      }, 0);
+      return () => window.clearTimeout(timer);
+    }
+    const controller = new AbortController();
+    fetch(`${GATEWAY_HTTP}/api/cards`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Không đọc được danh sách thẻ.');
+        const payload = (await response.json()) as { cards?: CardRow[] };
+        setCards(payload.cards ?? []);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setCards([]);
+      });
+    return () => controller.abort();
+  }, [sim.source]);
   const allCars = sim.blocks.flatMap((b) =>
     b.slots.flatMap((plate, i) =>
       plate
@@ -37,9 +66,32 @@ export default function Tracking({ sim }: ScreenProps) {
         : [],
     ),
   );
-  const cars = allCars.filter((c) =>
-    `${c.plate} ${c.block}`.toLowerCase().includes(query.toLowerCase()),
+  const term = query.trim().toLocaleLowerCase('vi-VN');
+  const matchedCards = cards.filter((card) =>
+    [card.id, card.uid, card.plate].some((value) =>
+      value.toLocaleLowerCase('vi-VN').includes(term),
+    ),
   );
+  const matchedPlates = new Set(
+    matchedCards.map((card) => card.plate.toLocaleLowerCase('vi-VN')),
+  );
+  const cars = allCars.filter(
+    (car) =>
+      !term ||
+      `${car.plate} ${car.block}`
+        .toLocaleLowerCase('vi-VN')
+        .includes(term) ||
+      matchedPlates.has(car.plate.toLocaleLowerCase('vi-VN')),
+  );
+  const lookupMessage = !term
+    ? null
+    : cars.length > 1
+      ? `Thấy ở ${cars.length} vị trí — cần kiểm tra`
+      : cars.length === 1
+        ? `Đang trong bãi · Zone ${cars[0].zone} · ${cars[0].blockName} · P${String(cars[0].slot + 1).padStart(2, '0')}`
+        : matchedCards.some((card) => card.active)
+          ? 'Thẻ hợp lệ nhưng không thấy xe'
+          : `Không tìm thấy “${query.trim()}”`;
   const readOnly = isReadOnly(sim);
   const untracked = Math.max(
     0,
@@ -62,6 +114,20 @@ export default function Tracking({ sim }: ScreenProps) {
               onChange={(e) => setQuery(e.target.value)}
             />
           </label>
+          {lookupMessage && (
+            <output
+              className={
+                'notice ' +
+                (cars.length === 1
+                  ? 'green'
+                  : cars.length > 1
+                    ? 'amber'
+                    : 'amber')
+              }
+            >
+              {lookupMessage}
+            </output>
+          )}
           <div className="control-line">
             <span>Đầu đọc cổng vào (In-Gate)</span>
             <Badge tone={readOnly ? 'amber' : 'blue'}>

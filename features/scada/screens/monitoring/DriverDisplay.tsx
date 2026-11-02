@@ -40,7 +40,7 @@ function readInstruction() {
   }
 }
 
-export default function DriverDisplay(_: ScreenProps) {
+export default function DriverDisplay({ sim }: ScreenProps) {
   const [instruction, setInstruction] = useState<DriverInstruction>(fallback);
   useEffect(() => {
     const refresh = () => setInstruction(readInstruction());
@@ -52,6 +52,22 @@ export default function DriverDisplay(_: ScreenProps) {
       window.removeEventListener('storage', refresh);
     };
   }, []);
+  const camera = sim.integrations?.camera;
+  const displayedInstruction: DriverInstruction =
+    sim.source !== 'sim' && camera?.block
+      ? {
+          plate:
+            camera.plate ||
+            [camera.make, camera.model].filter(Boolean).join(' ') ||
+            'CHƯA NHẬN DIỆN',
+          vehicleClass:
+            camera.category || camera.weightClass || 'Chưa phân loại xe',
+          block: `Block ${camera.block}`,
+          zone: camera.zone ? `Zone ${camera.zone}` : 'Zone chưa xác định',
+          route: `Cổng vào → Làn điều phối → ${camera.zone ? `Zone ${camera.zone} → ` : ''}Block ${camera.block}`,
+          updatedAt: new Date(camera.receivedAt).toLocaleString('vi-VN'),
+        }
+      : instruction;
   return (
     <div className="driver-display">
       <Panel
@@ -63,21 +79,21 @@ export default function DriverDisplay(_: ScreenProps) {
           <div className="driver-plate">
             <CarFront size={38} />
             <span>BIỂN SỐ</span>
-            <strong>{instruction.plate}</strong>
-            <small>{instruction.vehicleClass}</small>
+            <strong>{displayedInstruction.plate}</strong>
+            <small>{displayedInstruction.vehicleClass}</small>
           </div>
           <ArrowRight className="driver-arrow" size={54} />
           <div className="driver-destination">
             <MapPin size={38} />
             <span>VỊ TRÍ ĐƯỢC CHỌN</span>
-            <strong>{instruction.block}</strong>
-            <small>{instruction.zone}</small>
+            <strong>{displayedInstruction.block}</strong>
+            <small>{displayedInstruction.zone}</small>
           </div>
         </div>
-        <div className="driver-route">{instruction.route}</div>
+        <div className="driver-route">{displayedInstruction.route}</div>
         <p className="hint">
           Giữ nguyên chỉ dẫn này cho tới khi hệ thống tiếp nhận xe tiếp theo.
-          Cập nhật cuối: {instruction.updatedAt}.
+          Cập nhật cuối: {displayedInstruction.updatedAt}.
         </p>
       </Panel>
     </div>

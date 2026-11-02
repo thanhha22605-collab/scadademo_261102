@@ -73,7 +73,7 @@ export default function ScadaApp() {
     (a) =>
       isActiveAlarm(a) &&
       !a.ack &&
-      (a.sev === 'Nghiêm trọng' || a.cat === 'system'),
+      a.sev === 'Nghiêm trọng',
   );
   const disconnected =
     sim.source !== 'sim' &&

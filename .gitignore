@@ -40,6 +40,7 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+/tmp/
 
 # local reference exports supplied for visual comparison
 /LUMI SCADA (standalone).html

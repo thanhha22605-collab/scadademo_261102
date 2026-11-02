@@ -491,6 +491,64 @@
   border-radius: 12px;
 }
 
+.warm-glass-theme .floor-map-shell {
+  background: rgba(238, 234, 228, 0.78);
+  border-color: rgba(105, 95, 85, 0.22);
+  border-radius: 16px;
+  box-shadow: 0 20px 50px -30px rgba(60, 50, 40, 0.45);
+}
+.warm-glass-theme .floor-map-toolbar {
+  background: rgba(255, 255, 255, 0.58);
+  border-color: rgba(105, 95, 85, 0.18);
+}
+.warm-glass-theme .floor-map-toolbar strong {
+  color: #29292b;
+}
+.warm-glass-theme .floor-map-toolbar span,
+.warm-glass-theme .floor-map-zoom output {
+  color: #6f6962;
+}
+.warm-glass-theme .floor-map-zoom button {
+  color: #3f3c38;
+  background: rgba(255, 255, 255, 0.65);
+  border-color: rgba(105, 95, 85, 0.25);
+}
+.warm-glass-theme .floor-map-zoom button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.92);
+  border-color: #859ba4;
+}
+.warm-glass-theme .floor-map-viewport {
+  background:
+    linear-gradient(rgba(231, 226, 219, 0.72), rgba(231, 226, 219, 0.72)),
+    radial-gradient(
+      circle at center,
+      rgba(105, 95, 85, 0.3) 1px,
+      transparent 1px
+    );
+  background-size:
+    auto,
+    18px 18px;
+}
+.warm-glass-theme .floor-map-popover {
+  color: #29292b;
+  background: rgba(255, 255, 255, 0.88);
+  border-color: rgba(105, 95, 85, 0.25);
+  box-shadow: 0 18px 42px rgba(60, 50, 40, 0.28);
+}
+.warm-glass-theme .floor-map-popover-head strong,
+.warm-glass-theme .floor-map-popover dd {
+  color: #242426;
+}
+.warm-glass-theme .floor-map-popover-head small,
+.warm-glass-theme .floor-map-popover dt,
+.warm-glass-theme .floor-map-popover p {
+  color: #6f6962;
+}
+.warm-glass-theme .floor-map-popover dl > div {
+  background: rgba(244, 241, 236, 0.9);
+  border-color: rgba(105, 95, 85, 0.18);
+}
+
 .warm-glass-theme .floor-cells i,
 .warm-glass-theme .pallet,
 .warm-glass-theme .lg-empty {

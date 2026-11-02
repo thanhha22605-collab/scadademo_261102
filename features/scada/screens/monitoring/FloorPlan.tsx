@@ -1,345 +1,384 @@
 'use client';
+
 import { useMemo, useState } from 'react';
+import Image from 'next/image';
 import {
   Badge,
+  ConnectionBadge,
   Panel,
   type ScreenProps,
 } from '@/features/scada/components/shared';
-import { countOf, percent } from '@/features/scada/model/simulation';
+import {
+  blockLabel,
+  countOf,
+  percent,
+  type Block,
+} from '@/features/scada/model/simulation';
 
-type FZone = {
-  z: number;
+type MapZone = 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
+type MapLevel = 'normal' | 'warning' | 'fault' | 'unmapped';
+
+type MapBlock = {
+  number: number;
+  zone: MapZone;
+  capacity: number;
   x: number;
   y: number;
   w: number;
   h: number;
-  cols: number;
-  occ: number;
-  cap: number;
-  suv: string;
-  sedan: string;
 };
-const facility: FZone[] = [
-  {
-    z: 2,
-    x: 545,
-    y: 55,
-    w: 395,
-    h: 120,
-    cols: 19,
-    occ: 20,
-    cap: 38,
-    suv: '07/16',
-    sedan: '11/22',
-  },
-  {
-    z: 3,
-    x: 55,
-    y: 150,
-    w: 250,
-    h: 205,
-    cols: 10,
-    occ: 10,
-    cap: 40,
-    suv: '12/16',
-    sedan: '18/24',
-  },
-  {
-    z: 4,
-    x: 340,
-    y: 205,
-    w: 300,
-    h: 265,
-    cols: 11,
-    occ: 10,
-    cap: 44,
-    suv: '14/18',
-    sedan: '20/26',
-  },
-  {
-    z: 5,
-    x: 675,
-    y: 205,
-    w: 265,
-    h: 150,
-    cols: 10,
-    occ: 15,
-    cap: 30,
-    suv: '06/12',
-    sedan: '09/18',
-  },
-  {
-    z: 1,
-    x: 55,
-    y: 385,
-    w: 250,
-    h: 185,
-    cols: 10,
-    occ: 23,
-    cap: 34,
-    suv: '05/16',
-    sedan: '06/18',
-  },
-  {
-    z: 6,
-    x: 675,
-    y: 385,
-    w: 265,
-    h: 185,
-    cols: 10,
-    occ: 10,
-    cap: 35,
-    suv: '04/15',
-    sedan: '06/20',
-  },
+
+type LiveMapBlock = MapBlock & {
+  live?: Block;
+  level: MapLevel;
+  occupied: number | null;
+};
+
+/* Tọa độ theo ảnh nền 1.850 × 2.400 px, quy đổi sang phần trăm để responsive.
+ * Sức chứa lấy từ bảng tổng hợp của bản vẽ: 30 block / 349 chỗ cơ khí. */
+const MAP_BLOCKS: MapBlock[] = [
+  { number: 1, zone: 'A', capacity: 6, x: 16.1, y: 14.2, w: 6.5, h: 9.2 },
+  { number: 2, zone: 'A', capacity: 6, x: 22.7, y: 14.2, w: 6.7, h: 9.2 },
+  { number: 3, zone: 'A', capacity: 10, x: 29.6, y: 14.2, w: 8.2, h: 9.2 },
+  { number: 4, zone: 'A', capacity: 10, x: 43.7, y: 14.2, w: 9.1, h: 9.2 },
+  { number: 5, zone: 'B', capacity: 10, x: 47.3, y: 40.9, w: 7.3, h: 9.3 },
+  { number: 6, zone: 'B', capacity: 10, x: 54.7, y: 40.9, w: 7.2, h: 9.3 },
+  { number: 7, zone: 'B', capacity: 6, x: 62.1, y: 40.9, w: 5.3, h: 9.3 },
+  { number: 8, zone: 'B', capacity: 10, x: 67.7, y: 40.9, w: 8.0, h: 9.3 },
+  { number: 9, zone: 'C', capacity: 16, x: 33.5, y: 54.0, w: 8.3, h: 8.5 },
+  { number: 10, zone: 'C', capacity: 16, x: 41.9, y: 54.0, w: 8.4, h: 8.5 },
+  { number: 11, zone: 'C', capacity: 16, x: 50.4, y: 54.0, w: 8.4, h: 8.5 },
+  { number: 12, zone: 'C', capacity: 16, x: 58.9, y: 54.0, w: 8.4, h: 8.5 },
+  { number: 13, zone: 'C', capacity: 10, x: 67.5, y: 54.0, w: 7.2, h: 8.5 },
+  { number: 14, zone: 'C', capacity: 14, x: 76.3, y: 53.7, w: 5.2, h: 7.1 },
+  { number: 15, zone: 'C', capacity: 14, x: 76.3, y: 60.9, w: 5.2, h: 7.1 },
+  { number: 16, zone: 'C', capacity: 20, x: 76.3, y: 68.2, w: 5.2, h: 8.0 },
+  { number: 17, zone: 'C', capacity: 10, x: 67.5, y: 62.7, w: 7.2, h: 9.0 },
+  { number: 18, zone: 'C', capacity: 16, x: 58.9, y: 62.7, w: 8.4, h: 9.0 },
+  { number: 19, zone: 'C', capacity: 16, x: 50.4, y: 62.7, w: 8.4, h: 9.0 },
+  { number: 20, zone: 'C', capacity: 16, x: 41.9, y: 62.7, w: 8.4, h: 9.0 },
+  { number: 21, zone: 'C', capacity: 16, x: 33.5, y: 62.7, w: 8.3, h: 9.0 },
+  { number: 22, zone: 'D', capacity: 5, x: 15.2, y: 64.0, w: 11.9, h: 7.8 },
+  { number: 23, zone: 'E', capacity: 6, x: 27.7, y: 77.2, w: 7.1, h: 11.3 },
+  { number: 24, zone: 'E', capacity: 10, x: 34.9, y: 77.2, w: 8.1, h: 11.3 },
+  { number: 25, zone: 'E', capacity: 10, x: 43.1, y: 77.2, w: 9.3, h: 11.3 },
+  { number: 26, zone: 'E', capacity: 10, x: 62.4, y: 77.2, w: 8.8, h: 11.3 },
+  { number: 27, zone: 'F', capacity: 14, x: 62.4, y: 86.0, w: 8.8, h: 8.0 },
+  { number: 28, zone: 'F', capacity: 10, x: 52.3, y: 86.3, w: 9.8, h: 8.0 },
+  { number: 29, zone: 'F', capacity: 10, x: 43.9, y: 86.3, w: 8.2, h: 8.0 },
+  { number: 30, zone: 'F', capacity: 10, x: 35.5, y: 86.3, w: 8.2, h: 8.0 },
 ];
-function FloorZoneSvg({
-  zn,
-  active,
-  onPick,
-}: {
-  zn: FZone;
-  active: boolean;
-  onPick: () => void;
-}) {
-  const pct = Math.round((zn.occ / zn.cap) * 100);
-  const rows = Math.ceil(zn.cap / zn.cols);
-  const cs = Math.max(
-    6,
-    Math.min((zn.w - 20) / zn.cols, (zn.h - 74) / rows) - 3,
-  );
-  const gx = zn.x + (zn.w - (cs + 3) * zn.cols) / 2;
-  const gy = zn.y + 40;
-  return (
-    <a
-      href={`#zone-${zn.z}`}
-      aria-label={`Mở chi tiết Zone ${zn.z}`}
-      onClick={(event) => {
-        event.preventDefault();
-        onPick();
-      }}
-    >
-      <g style={{ cursor: 'pointer', outline: 'none' }}>
-        <rect
-          x={zn.x}
-          y={zn.y}
-          width={zn.w}
-          height={zn.h}
-          rx="7"
-          fill="#0e1c2e"
-          stroke={active ? '#f59e0b' : '#2f5580'}
-          strokeWidth={active ? 3 : 1}
-          strokeDasharray="5 4"
-        />
-        <text
-          x={zn.x + 14}
-          y={zn.y + 26}
-          fill="#cddcf0"
-          fontSize="17"
-          fontWeight="700"
-        >
-          ZONE {zn.z}
-        </text>
-        <text
-          x={zn.x + zn.w - 14}
-          y={zn.y + 26}
-          fill="#7fb0e6"
-          fontSize="14"
-          textAnchor="end"
-        >
-          {pct}%
-        </text>
-        {Array.from({ length: zn.cap }, (_, k) => {
-          const col = k % zn.cols;
-          const row = Math.floor(k / zn.cols);
-          return (
-            <rect
-              key={k}
-              x={gx + col * (cs + 3)}
-              y={gy + row * (cs + 3)}
-              width={cs}
-              height={cs}
-              rx="1.5"
-              fill={k < zn.occ ? '#1c6b56' : '#16283c'}
-              stroke={k < zn.occ ? '#2f9d7d' : '#24405b'}
-            />
-          );
-        })}
-        <text x={zn.x + 14} y={zn.y + zn.h - 14} fill="#8ca1bd" fontSize="12">
-          SUV {zn.suv} · Sedan {zn.sedan} · Mật độ {zn.occ}/{zn.cap}
-        </text>
-      </g>
-    </a>
-  );
+
+const MAP_CAPACITY = MAP_BLOCKS.reduce(
+  (total, block) => total + block.capacity,
+  0,
+);
+
+function levelOf(block?: Block): MapLevel {
+  if (!block) return 'unmapped';
+  if (
+    !block.online ||
+    block.fault ||
+    block.estop ||
+    block.safetyLatched ||
+    block.quality === 'unknown' ||
+    block.state === 'Lỗi' ||
+    block.state === 'Offline'
+  ) {
+    return 'fault';
+  }
+  if (
+    block.maintenance ||
+    block.jammed ||
+    block.paused ||
+    block.quality === 'stale' ||
+    block.state === 'Cảnh báo' ||
+    block.state === 'Bảo trì'
+  ) {
+    return 'warning';
+  }
+  return 'normal';
 }
+
+const levelText: Record<MapLevel, string> = {
+  normal: 'Bình thường',
+  warning: 'Cảnh báo / bảo trì',
+  fault: 'Lỗi / mất kết nối',
+  unmapped: 'Chưa ánh xạ PLC',
+};
+
+const levelTone: Record<MapLevel, string> = {
+  normal: 'green',
+  warning: 'amber',
+  fault: 'red',
+  unmapped: 'blue',
+};
+
 export default function FloorPlan({ sim, setSelected, setPage }: ScreenProps) {
-  const [selectedZone, setSelectedZone] = useState(1);
-  const liveFacility = useMemo(
-    () =>
-      facility.map((zone) => {
-        const key = ['A', 'B', 'C'][zone.z - 1];
-        if (!key) return zone;
-        const blocks = sim.blocks.filter((block) => block.zone === key);
-        if (!blocks.length) return zone;
-        const cap = blocks.reduce((sum, block) => sum + block.capacity, 0);
-        const occ = blocks.reduce(
-          (sum, block) => sum + (countOf(block) ?? 0),
-          0,
-        );
-        const suv = blocks.reduce(
-          (sum, block) =>
-            sum + block.kinds.filter((kind) => kind === 'SUV').length,
-          0,
-        );
-        const sedan = blocks.reduce(
-          (sum, block) =>
-            sum + block.kinds.filter((kind) => kind === 'Sedan').length,
-          0,
-        );
-        return {
-          ...zone,
-          cap,
-          occ,
-          suv: `${String(suv).padStart(2, '0')}/${cap}`,
-          sedan: `${String(sedan).padStart(2, '0')}/${cap}`,
-        };
-      }),
-    [sim.blocks],
+  const [selectedNumber, setSelectedNumber] = useState(1);
+  const [zoom, setZoom] = useState(1);
+
+  const blocks = useMemo<LiveMapBlock[]>(() => {
+    const zoneOffsets: Partial<Record<MapZone, number>> = {};
+    const byZone = new Map<MapZone, Block[]>();
+    for (const zone of ['A', 'B', 'C', 'D', 'E', 'F'] as MapZone[]) {
+      byZone.set(
+        zone,
+        sim.blocks
+          .filter((block) => block.zone === zone)
+          .sort((a, b) => a.id.localeCompare(b.id)),
+      );
+    }
+    return MAP_BLOCKS.map((mapBlock) => {
+      const index = zoneOffsets[mapBlock.zone] ?? 0;
+      zoneOffsets[mapBlock.zone] = index + 1;
+      const live = byZone.get(mapBlock.zone)?.[index];
+      return {
+        ...mapBlock,
+        live,
+        level: levelOf(live),
+        occupied: live ? (countOf(live) ?? null) : null,
+      };
+    });
+  }, [sim.blocks]);
+
+  const current =
+    blocks.find((block) => block.number === selectedNumber) ?? blocks[0];
+  const mapped = blocks.filter((block) => block.live);
+  const mappedOccupied = mapped.reduce(
+    (total, block) => total + (block.occupied ?? 0),
+    0,
   );
-  const current = liveFacility.find((zone) => zone.z === selectedZone)!;
-  const zoneKey = ['A', 'B', 'C'][selectedZone - 1];
-  const zoneBlocks = zoneKey
-    ? sim.blocks.filter((block) => block.zone === zoneKey)
+  const mappedCapacity = mapped.reduce(
+    (total, block) => total + (block.live?.capacity ?? 0),
+    0,
+  );
+  const recentCars = current.live
+    ? sim.jobs.filter((job) => job.block === current.live?.id).slice(0, 5)
     : [];
-  const recentCars = sim.jobs
-    .filter((job) => zoneBlocks.some((block) => block.id === job.block))
-    .slice(0, 5);
+  const displayCapacity = current.live?.capacity ?? current.capacity;
+  const displayOccupied = current.occupied;
+
+  const openBlock = () => {
+    if (!current.live) return;
+    setSelected(current.live.id);
+    setPage('zones');
+  };
+
   return (
     <>
-      <div className="blueprint-head">
+      <div className="blueprint-head floor-plan-heading">
         <div>
-          <div className="eyebrow">SCADA · AI-VDS · PLC BLOCK · HMI BLOCK</div>
-          <h2>Tổng hợp hệ thống phần mềm SCADA</h2>
+          <div className="eyebrow">TASECO LONG BIÊN CENTRAL · B1 PARKING</div>
+          <h2>Mặt bằng giao thông &amp; giám sát Block</h2>
           <p>
-            Giám sát tổng mặt bằng, trạng thái đỗ xe cơ khí và điều phối giao
-            thông phân khu.
+            Bản vẽ vector thực tế kết hợp trạng thái SCADA, popup chi tiết và
+            điều hướng tới từng Block.
           </p>
         </div>
         <div className="blueprint-meta">
           <div>
-            <small>PROJECT</small>
-            <b>SORA GARDENS II</b>
+            <small>PHẠM VI BẢN VẼ</small>
+            <b>
+              {MAP_BLOCKS.length} BLOCK · {MAP_CAPACITY} CHỖ
+            </b>
           </div>
           <div>
-            <small>SYSTEM BY</small>
-            <b>TOTAL PARKING</b>
+            <small>DỮ LIỆU HIỆN TẠI</small>
+            <b>{mapped.length}/30 BLOCK ĐÃ ÁNH XẠ</b>
           </div>
         </div>
       </div>
-      <div className="remarks">
-        <span>REMARKS:</span>
-        <Badge tone="blue">PSH-7 (7 SPACES)</Badge>
-        <Badge tone="purple">PSH-5 (5 SPACES)</Badge>
-        <Badge tone="amber">PSH-3 (3 SPACES)</Badge>
+
+      <div className="remarks floor-plan-statusbar">
+        <span>TRẠNG THÁI:</span>
+        <ConnectionBadge sim={sim} />
+        <Badge tone="green">
+          {mappedOccupied}/{mappedCapacity} vị trí đã đỗ
+        </Badge>
+        <Badge tone="blue">6 phân khu A–F</Badge>
         <span className="remarks-conn">
-          Trạng thái kết nối ZCU/PGS: <Badge tone="green">ONLINE</Badge>
+          Chọn một Block trên bản đồ để xem chi tiết.
         </span>
       </div>
-      <div className="floor-svg-wrap">
-        <svg
-          viewBox="0 0 1000 620"
-          aria-label="Sơ đồ mặt bằng SCADA 6 phân khu"
-        >
-          <title>Sơ đồ mặt bằng SCADA 6 phân khu</title>
-          <defs>
-            <pattern
-              id="fgrid"
-              width="26"
-              height="26"
-              patternUnits="userSpaceOnUse"
+
+      <div className="floor-map-shell">
+        <div className="floor-map-toolbar" aria-label="Điều khiển bản đồ">
+          <div>
+            <strong>Mặt bằng tầng hầm B1</strong>
+            <span>Bản vẽ giao thông · Block cơ khí</span>
+          </div>
+          <div className="floor-map-zoom">
+            <button
+              type="button"
+              aria-label="Thu nhỏ bản đồ"
+              onClick={() => setZoom((value) => Math.max(1, value - 0.25))}
+              disabled={zoom <= 1}
             >
-              <path
-                d="M26 0 L0 0 0 26"
-                fill="none"
-                stroke="#16273a"
-                strokeWidth="1"
-              />
-            </pattern>
-          </defs>
-          <path
-            d="M40 60 L720 30 L965 150 L965 585 L120 590 L35 380 Z"
-            fill="#0a1524"
-            stroke="#37546f"
-            strokeWidth="2"
-          />
-          <path
-            d="M40 60 L720 30 L965 150 L965 585 L120 590 L35 380 Z"
-            fill="url(#fgrid)"
-            opacity="0.6"
-          />
-          <text x="330" y="200" fill="#3f5f7d" fontSize="13" letterSpacing="3">
-            SORA GARDENS II — TOTAL PARKING
-          </text>
-          <line
-            x1="320"
-            y1="470"
-            x2="660"
-            y2="470"
-            stroke="#2a405a"
-            strokeWidth="14"
-            strokeDasharray="10 8"
-          />
-          <text x="330" y="497" fill="#5c7796" fontSize="12">
-            ← LÀN LƯU THÔNG · VÀO / RA →
-          </text>
-          {liveFacility.map((zn) => (
-            <FloorZoneSvg
-              key={zn.z}
-              zn={zn}
-              active={zn.z === selectedZone}
-              onPick={() => setSelectedZone(zn.z)}
+              −
+            </button>
+            <output aria-live="polite">{Math.round(zoom * 100)}%</output>
+            <button
+              type="button"
+              aria-label="Phóng to bản đồ"
+              onClick={() => setZoom((value) => Math.min(2.5, value + 0.25))}
+              disabled={zoom >= 2.5}
+            >
+              +
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoom(1)}
+              disabled={zoom === 1}
+            >
+              Vừa màn hình
+            </button>
+          </div>
+        </div>
+
+        <div className="floor-map-viewport">
+          <div className="floor-map-canvas" style={{ width: `${zoom * 100}%` }}>
+            <Image
+              src="/taseco-b1-floorplan.png"
+              alt="Mặt bằng giao thông tầng hầm B1 dự án TASECO Long Biên Central"
+              width={1850}
+              height={2400}
+              sizes="(max-width: 900px) 760px, 100vw"
+              priority
+              draggable={false}
             />
-          ))}
-        </svg>
-      </div>
-      <div className="chart-legend">
-        <span>
-          <i className="green-dot" />
-          Đã đỗ xe
-        </span>
-        <span>
-          <i className="blue-dot" />
-          Vị trí trống
-        </span>
-        <span className="muted">Sơ đồ mô phỏng · Puzzle Parking System</span>
-      </div>
-      <Panel
-        title={`Chi tiết Zone ${selectedZone}`}
-        aside={
-          <Badge
-            tone={percent(current.occ, current.cap) > 85 ? 'red' : 'green'}
+            <div
+              className="floor-map-hotspots"
+              aria-label="30 Block trên mặt bằng"
+            >
+              {blocks.map((block) => (
+                <button
+                  key={block.number}
+                  type="button"
+                  className={`floor-block-hotspot ${block.level} ${
+                    block.number === current.number ? 'selected' : ''
+                  }`}
+                  style={{
+                    left: `${block.x}%`,
+                    top: `${block.y}%`,
+                    width: `${block.w}%`,
+                    height: `${block.h}%`,
+                  }}
+                  aria-label={`Block ${String(block.number).padStart(2, '0')}, Zone ${block.zone}, ${levelText[block.level]}`}
+                  aria-pressed={block.number === current.number}
+                  onClick={() => setSelectedNumber(block.number)}
+                >
+                  <span>{String(block.number).padStart(2, '0')}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <aside
+          className={`floor-map-popover ${current.level}`}
+          aria-live="polite"
+        >
+          <div className="floor-map-popover-head">
+            <div>
+              <small>ZONE {current.zone}</small>
+              <strong>BLOCK {String(current.number).padStart(2, '0')}</strong>
+            </div>
+            <Badge tone={levelTone[current.level]}>
+              {levelText[current.level]}
+            </Badge>
+          </div>
+          <dl>
+            <div>
+              <dt>Sức chứa</dt>
+              <dd>{displayCapacity}</dd>
+            </div>
+            <div>
+              <dt>Đang đỗ</dt>
+              <dd>{displayOccupied ?? '—'}</dd>
+            </div>
+            <div>
+              <dt>Còn trống</dt>
+              <dd>
+                {displayOccupied === null
+                  ? '—'
+                  : Math.max(0, displayCapacity - displayOccupied)}
+              </dd>
+            </div>
+          </dl>
+          <p>
+            {current.live
+              ? `Ánh xạ ${blockLabel(current.live)} · PLC ${current.live.online ? 'online' : 'offline'}`
+              : 'Đã có vị trí trên bản vẽ; cần khai báo Block tương ứng trong cấu hình PLC.'}
+          </p>
+          <button
+            type="button"
+            className="mini"
+            disabled={!current.live}
+            onClick={openBlock}
           >
-            Mật độ {percent(current.occ, current.cap)}%
+            {current.live ? 'Mở giám sát Block' : 'Chưa thể mở Block'}
+          </button>
+        </aside>
+      </div>
+
+      <div className="chart-legend floor-map-legend">
+        <span>
+          <i className="map-legend-dot normal" />
+          Bình thường
+        </span>
+        <span>
+          <i className="map-legend-dot warning" />
+          Cảnh báo / bảo trì
+        </span>
+        <span>
+          <i className="map-legend-dot fault" />
+          Lỗi / mất kết nối
+        </span>
+        <span>
+          <i className="map-legend-dot unmapped" />
+          Chưa ánh xạ PLC
+        </span>
+        <span className="muted">
+          Màu phủ chỉ phục vụ giám sát, không thay thế bản vẽ kỹ thuật.
+        </span>
+      </div>
+
+      <Panel
+        title={`Chi tiết Block ${String(current.number).padStart(2, '0')} · Zone ${current.zone}`}
+        aside={
+          <Badge tone={levelTone[current.level]}>
+            {displayOccupied === null
+              ? levelText[current.level]
+              : `Mật độ ${percent(displayOccupied, displayCapacity)}%`}
           </Badge>
         }
         pad
       >
-        <div className="zone-popup-grid">
+        <div className="zone-popup-grid floor-block-stats">
           <div>
-            <span>Sức chứa</span>
-            <strong>{current.cap}</strong>
+            <span>Sức chứa thiết kế</span>
+            <strong>{current.capacity}</strong>
+            <small>vị trí cơ khí theo bản vẽ</small>
           </div>
           <div>
-            <span>Đang đỗ</span>
-            <strong>{current.occ}</strong>
+            <span>Ánh xạ SCADA</span>
+            <strong>{current.live ? current.live.id : '—'}</strong>
+            <small>
+              {current.live ? blockLabel(current.live) : 'Chưa cấu hình PLC'}
+            </small>
           </div>
           <div>
-            <span>Còn trống</span>
-            <strong>{Math.max(0, current.cap - current.occ)}</strong>
+            <span>Trạng thái vận hành</span>
+            <strong>{current.live?.state ?? 'Chưa có dữ liệu'}</strong>
+            <small>
+              {current.live
+                ? `Mode ${current.live.mode ?? 'N/A'}`
+                : 'Chỉ hiển thị vị trí mặt bằng'}
+            </small>
           </div>
         </div>
         <div className="zone-recent">
-          <b>Xe gần đây</b>
+          <b>Xe / lệnh gần đây</b>
           {recentCars.length ? (
             recentCars.map((job) => (
               <button
@@ -356,7 +395,9 @@ export default function FloorPlan({ sim, setSelected, setPage }: ScreenProps) {
             ))
           ) : (
             <span className="muted">
-              Chưa có xe mới trong Zone này ở phiên hiện tại.
+              {current.live
+                ? 'Chưa có xe hoặc lệnh mới trong Block này.'
+                : 'Block chưa ánh xạ nên chưa có dữ liệu vận hành.'}
             </span>
           )}
         </div>

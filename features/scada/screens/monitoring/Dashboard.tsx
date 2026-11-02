@@ -328,14 +328,14 @@ export default function Dashboard({
             tone: 'blue',
           },
           {
-            label: 'Tổng Pallet',
+            label: 'Tổng chỗ đỗ',
             value: String(capacity),
-            sub: 'Sức chứa toàn hệ thống',
+            sub: 'Ô đỗ cơ khí toàn hệ thống',
             icon: CircleParking,
             tone: 'purple',
           },
           {
-            label: 'Xe đang đỗ',
+            label: 'Phiên đang mở',
             value: String(sum.total),
             sub:
               percent(sum.total, capacity) +
@@ -345,7 +345,7 @@ export default function Dashboard({
             tone: 'green',
           },
           {
-            label: 'Vị trí khả dụng',
+            label: 'Còn trống',
             value: String(sum.available),
             sub:
               Math.max(0, capacity - sum.total - sum.available) +
@@ -468,7 +468,7 @@ export default function Dashboard({
               key={b.id}
               onClick={() => {
                 setSelected(b.id);
-                setPage('control');
+                setPage('zones');
               }}
             >
               <div className="block-card-top">

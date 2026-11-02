@@ -147,12 +147,14 @@ function requirePool() {
 }
 
 export async function saveAlarmAck(id, by, at = new Date()) {
-  await requirePool().execute(
-    `INSERT INTO scada_alarm_ack (alarm_id, acknowledged_by, acknowledged_at)
-     VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE acknowledged_by=VALUES(acknowledged_by), acknowledged_at=VALUES(acknowledged_at)`,
+  const [result] = await requirePool().execute(
+    `INSERT IGNORE INTO scada_alarm_ack (alarm_id, acknowledged_by, acknowledged_at)
+     VALUES (?, ?, ?)`,
     [id, by, at],
   );
+  if (Number(result.affectedRows) === 0) return false;
   await appendAudit('ACK_ALARM', id, by, 'Xác nhận cảnh báo', at);
+  return true;
 }
 
 export async function listAlarmAcks() {
@@ -163,7 +165,32 @@ export async function listAlarmAcks() {
 }
 
 export async function upsertCard(card, by) {
-  await requirePool().execute(
+  const db = requirePool();
+  const [existingRows] = await db.execute(
+    'SELECT uid,active FROM scada_cards WHERE card_id=? LIMIT 1',
+    [card.id],
+  );
+  const existing = existingRows[0];
+  if (existing && Number(existing.active) === 1 && card.active === false) {
+    const [events] = await db.execute(
+      `SELECT direction,result_text,occurred_at FROM scada_access_events
+       WHERE uid=? ORDER BY occurred_at DESC LIMIT 1`,
+      [existing.uid],
+    );
+    const latest = events[0];
+    if (
+      latest &&
+      latest.direction === 'IN' &&
+      latest.result_text === 'Cho phép'
+    )
+      throw new Error('Không thể khóa: thẻ đang có xe trong bãi.');
+    if (
+      latest &&
+      Date.now() - new Date(latest.occurred_at).getTime() <= 24 * 60 * 60 * 1000
+    )
+      throw new Error('Không thể khóa: thẻ vừa được quẹt trong 24 giờ.');
+  }
+  await db.execute(
     `INSERT INTO scada_cards
       (card_id,uid,plate,owner_name,vehicle_type,zone_name,block_id,import_batch,weight_class,active,updated_by)
      VALUES (?,?,?,?,?,?,?,?,?,?,?)
@@ -188,6 +215,19 @@ export async function upsertCard(card, by) {
     by,
     `active=${card.active === false ? 0 : 1}; uid=${card.uid}`,
   );
+}
+
+export async function deleteCard(cardId, by) {
+  const db = requirePool();
+  const [rows] = await db.execute(
+    'SELECT active FROM scada_cards WHERE card_id=? LIMIT 1',
+    [cardId],
+  );
+  if (!rows.length) throw new Error('Không tìm thấy thẻ cần xóa.');
+  if (Number(rows[0].active) !== 0)
+    throw new Error('Chỉ được xóa thẻ đã khóa.');
+  await db.execute('DELETE FROM scada_cards WHERE card_id=?', [cardId]);
+  await appendAudit('DELETE_CARD', cardId, by, 'Xóa thẻ đã khóa');
 }
 
 export async function listCards(query = '') {
